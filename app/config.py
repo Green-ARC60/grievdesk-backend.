@@ -3,7 +3,7 @@ from datetime import timedelta
 
 
 class Config:
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL")
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or "sqlite:///grievdesk.db"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MAX_CONTENT_LENGTH = 12 * 1024 * 1024  # hard ceiling for any request body
 

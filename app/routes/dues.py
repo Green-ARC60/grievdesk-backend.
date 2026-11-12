@@ -89,12 +89,29 @@ def create_due():
         flat_no, block_no = data.get("flat_no"), data.get("block_no")
         if not flat_no or not block_no:
             return jsonify({"error": "missing_fields", "message": "Send user_id, or flat_no and block_no."}), 400
-        residents = User.query.filter_by(
-            flat_no=flat_no, block_no=block_no, approval_status=ApprovalStatus.APPROVED,
+
+        flat_str = str(flat_no).strip()
+        block_str = str(block_no).strip()
+        clean_block = re.sub(r"^block\s+", "", block_str, flags=re.IGNORECASE).strip()
+
+        residents = User.query.filter(
+            db.func.lower(User.flat_no) == flat_str.lower(),
+            db.func.lower(User.block_no) == clean_block.lower(),
+            User.approval_status == ApprovalStatus.APPROVED,
         ).all()
 
+        if not residents and clean_block != block_str:
+            residents = User.query.filter(
+                db.func.lower(User.flat_no) == flat_str.lower(),
+                db.func.lower(User.block_no) == block_str.lower(),
+                User.approval_status == ApprovalStatus.APPROVED,
+            ).all()
+
     if not residents:
-        return jsonify({"error": "resident_not_found"}), 404
+        return jsonify({
+            "error": "resident_not_found",
+            "message": f"No approved resident found for Flat {data.get('flat_no', '')}, Block {data.get('block_no', '')}."
+        }), 404
     if len(residents) > 1:
         return jsonify({
             "error": "ambiguous_flat",
