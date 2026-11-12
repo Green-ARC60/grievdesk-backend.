@@ -2,8 +2,19 @@ import os
 from datetime import timedelta
 
 
+def _normalize_db_uri(raw_uri: str | None) -> str:
+    if not raw_uri:
+        return "sqlite:///grievdesk.db"
+    uri = raw_uri.strip()
+    if uri.startswith("postgres://"):
+        uri = uri.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif uri.startswith("postgresql://") and not uri.startswith("postgresql+"):
+        uri = uri.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return uri
+
+
 class Config:
-    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or "sqlite:///grievdesk.db"
+    SQLALCHEMY_DATABASE_URI = _normalize_db_uri(os.environ.get("DATABASE_URL"))
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MAX_CONTENT_LENGTH = 12 * 1024 * 1024  # hard ceiling for any request body
 
