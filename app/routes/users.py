@@ -10,6 +10,7 @@ from app.utils.decorators import (
 from app.models.user import User, Role, ApprovalStatus
 from app.models.notification import NotificationType
 from app.services.tickets import notify
+from app.services.email import send_resident_approved_email
 
 users_bp = Blueprint("users", __name__, url_prefix="/api/users")
 
@@ -151,7 +152,16 @@ def approve_user(user_id):
 
     user.approval_status = ApprovalStatus.APPROVED
     db.session.commit()
-    return jsonify({"message": "Resident approved.", "user": user.to_public_dict()}), 200
+
+    # Forward approval acknowledgment email to the newly approved resident
+    send_resident_approved_email(
+        to_email=user.gmail,
+        recipient_name=user.name,
+        flat_no=user.flat_no,
+        block_no=user.block_no
+    )
+
+    return jsonify({"message": "Resident approved and notification email sent.", "user": user.to_public_dict()}), 200
 
 
 @users_bp.patch("/<int:user_id>/promote-to-committee")

@@ -7,7 +7,7 @@ from email_validator import validate_email, EmailNotValidError
 from app.extensions import db
 from app.models.user import User, Role, ApprovalStatus
 from app.models.password_reset_otp import PasswordResetOTP
-from app.services.email import send_password_reset_otp_email
+from app.services.email import send_password_reset_otp_email, send_registration_received_email
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
@@ -76,6 +76,14 @@ def register():
 
     db.session.add(new_user)
     db.session.commit()
+
+    if new_user.role == Role.RESIDENT:
+        send_registration_received_email(
+            to_email=new_user.gmail,
+            recipient_name=new_user.name,
+            flat_no=new_user.flat_no,
+            block_no=new_user.block_no
+        )
 
     message = (
         "Registered as Secretary."
