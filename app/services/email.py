@@ -301,3 +301,140 @@ GrievDesk Society Management
     print(f"=======================================================\n")
 
     return _dispatch_email(to_email, subject, plain_text, html_content)
+
+
+def send_vendor_task_assigned_email(
+    vendor_email: str,
+    vendor_name: str,
+    vendor_profession: str,
+    complaint_id: int,
+    category: str,
+    severity: str,
+    description: str,
+    flat_no: str,
+    block_no: str,
+    resident_name: str,
+    notes: str,
+    assigned_by_name: str,
+    assigned_by_role: str,
+) -> bool:
+    """
+    Sends an assignment work order email directly to the designated vendor/helper.
+    Dispatched via Resend API (HTTP POST https://api.resend.com/emails) with SMTP fallback.
+    Carries full ticket details and any written or transcribed voice notes in their local language.
+    """
+    subject = f"GrievDesk Task Assigned [Ticket #{complaint_id}] - {category or 'Society Maintenance'} ({vendor_profession})"
+    
+    flat_info = f"Flat {flat_no}, Block {block_no}" if flat_no and block_no else (flat_no or block_no or "Society Common Area")
+    severity_str = (severity or "Medium").capitalize()
+    notes_display = notes.strip() if notes and notes.strip() else "No special instructions provided."
+
+    plain_text = f"""Hello {vendor_name},
+
+A new society service task has been assigned to you on GrievDesk Residential Portal.
+
+ASSIGNMENT DETAILS:
+-------------------
+Vendor: {vendor_name} ({vendor_profession})
+Task Status: In Progress
+Assigned By: {assigned_by_name} ({assigned_by_role.capitalize()})
+Ticket ID: #{complaint_id}
+Category: {category or 'General Maintenance'}
+Priority: {severity_str}
+Location: {flat_info}
+Resident: {resident_name or 'Resident Member'}
+
+ISSUE SUMMARY:
+{description}
+
+INSTRUCTIONS / NOTES (Written / Voice Note in Local Language):
+{notes_display}
+
+Please reach out to the resident or visit the society premises to attend to this task promptly.
+
+Regards,
+GrievDesk Society Management
+"""
+
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #EEF0F3; margin: 0; padding: 24px; color: #1F262E; }}
+    .card {{ max-width: 540px; margin: 0 auto; background: #FFFFFF; border-radius: 12px; border: 1px solid #AEB6C2; padding: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }}
+    .header {{ font-size: 20px; font-weight: 700; color: #0F52BA; margin-bottom: 4px; }}
+    .society {{ font-size: 13px; color: #4A5563; margin-bottom: 20px; border-bottom: 1px solid #E3E6EB; padding-bottom: 12px; }}
+    .badge-box {{ background-color: #EFF6FF; border: 1px solid #93C5FD; border-radius: 8px; padding: 14px 18px; margin: 18px 0; display: flex; justify-content: space-between; align-items: center; }}
+    .badge-title {{ font-size: 15px; font-weight: 700; color: #1E40AF; margin: 0; }}
+    .status-pill {{ background-color: #2563EB; color: #FFFFFF; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 10px; border-radius: 999px; }}
+    .info-grid {{ width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 13px; }}
+    .info-grid td {{ padding: 8px 10px; border-bottom: 1px solid #F1F3F5; }}
+    .info-grid td.label {{ color: #64748B; font-weight: 600; width: 36%; }}
+    .info-grid td.value {{ color: #0F172A; font-weight: 500; }}
+    .notes-box {{ background-color: #FEF3C7; border-left: 4px solid #F59E0B; border-radius: 6px; padding: 14px 16px; margin: 20px 0; font-size: 13px; }}
+    .notes-title {{ font-weight: 700; color: #92400E; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }}
+    .notes-content {{ color: #78350F; line-height: 1.5; white-space: pre-wrap; }}
+    .desc-box {{ background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 12px 14px; margin: 16px 0; font-size: 13px; color: #334155; line-height: 1.5; }}
+    .footer {{ font-size: 12px; color: #64748B; margin-top: 24px; border-top: 1px solid #E3E6EB; padding-top: 16px; line-height: 1.5; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">GrievDesk &bull; Vendor Work Order</div>
+    <div class="society">Society Maintenance &amp; Helper Allocation Desk</div>
+    
+    <p>Hello <strong>{vendor_name}</strong> ({vendor_profession}),</p>
+    
+    <div class="badge-box">
+      <div>
+        <div class="badge-title">Task Assigned &bull; #{complaint_id}</div>
+        <div style="font-size: 12px; color: #3B82F6; margin-top: 2px;">Assigned by {assigned_by_name} ({assigned_by_role.capitalize()})</div>
+      </div>
+      <span class="status-pill">IN PROGRESS</span>
+    </div>
+
+    <table class="info-grid">
+      <tr>
+        <td class="label">Profession / Category</td>
+        <td class="value"><strong>{vendor_profession}</strong></td>
+      </tr>
+      <tr>
+        <td class="label">Location / Flat</td>
+        <td class="value"><strong>{flat_info}</strong></td>
+      </tr>
+      <tr>
+        <td class="label">Resident Contact</td>
+        <td class="value">{resident_name or 'Resident Member'}</td>
+      </tr>
+      <tr>
+        <td class="label">Priority / Severity</td>
+        <td class="value">{severity_str}</td>
+      </tr>
+    </table>
+
+    <div style="font-size: 12px; font-weight: 700; color: #475569; margin-top: 14px; text-transform: uppercase;">Resident Complaint Description:</div>
+    <div class="desc-box">
+      {description}
+    </div>
+
+    <div class="notes-box">
+      <div class="notes-title">&#x1F4DD; Instructions / Voice Note (Local Language):</div>
+      <div class="notes-content">{notes_display}</div>
+    </div>
+
+    <div class="footer">
+      Please coordinate with the resident or society management to complete the work. When finished, notify the society committee to mark this ticket resolved.
+    </div>
+  </div>
+</body>
+</html>"""
+
+    print(f"\n=======================================================")
+    print(f"[VENDOR ALLOCATION EMAIL] Task #{complaint_id} Assigned to {vendor_name} ({vendor_email}):")
+    print(f"Profession: {vendor_profession} | Location: {flat_info}")
+    print(f"Local Language Note: {notes_display}")
+    print(f"=======================================================\n")
+
+    return _dispatch_email(vendor_email, subject, plain_text, html_content)
+

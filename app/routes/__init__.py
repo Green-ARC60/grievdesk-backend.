@@ -10,6 +10,7 @@ from app.routes.dues import dues_bp
 from app.routes.amenities import amenities_bp, bookings_bp
 from app.routes.my_tickets import my_tickets_bp
 from app.routes.search import search_bp
+from app.routes.vendors import vendors_bp
 
 
 def register_blueprints(app):
@@ -26,3 +27,4 @@ def register_blueprints(app):
     app.register_blueprint(bookings_bp)
     app.register_blueprint(my_tickets_bp)
     app.register_blueprint(search_bp)
+    app.register_blueprint(vendors_bp)

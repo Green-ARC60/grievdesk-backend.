@@ -20,3 +20,4 @@ class PasswordResetOTP(db.Model):
         if datetime.now(timezone.utc) > self.expires_at:
             return False
         return self.otp_code.strip() == code.strip()
+
