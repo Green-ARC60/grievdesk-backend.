@@ -2,6 +2,7 @@ import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
 
 
 def send_password_reset_otp_email(to_email: str, recipient_name: str, otp_code: str) -> bool:
@@ -69,6 +70,7 @@ GrievDesk Society Management
     print(f"OTP CODE: {otp_code} (Valid for 10 minutes)")
     print(f"=======================================================\n")
 
+    load_dotenv(override=True)
     smtp_host = os.environ.get("SMTP_HOST")
     smtp_user = os.environ.get("SMTP_USER")
     smtp_pass = os.environ.get("SMTP_PASSWORD")
@@ -76,10 +78,11 @@ GrievDesk Society Management
     from_email = os.environ.get("SMTP_FROM_EMAIL", smtp_user or "noreply@grievdesk.org")
 
     if not smtp_host or not smtp_user or not smtp_pass:
-        # SMTP not configured: logged to terminal safely
+        print(f"[AUTH EMAIL] SMTP not configured. Logged OTP to console only.")
         return True
 
     try:
+        print(f"[AUTH EMAIL] Connecting to {smtp_host}:{smtp_port} as {smtp_user}...")
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = f"GrievDesk Support <{from_email}>"
@@ -89,11 +92,11 @@ GrievDesk Society Management
         msg.attach(MIMEText(html_content, "html", "utf-8"))
 
         if smtp_port == 465:
-            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10) as server:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=12) as server:
                 server.login(smtp_user, smtp_pass)
                 server.sendmail(from_email, [to_email], msg.as_string())
         else:
-            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=12) as server:
                 server.ehlo()
                 if os.environ.get("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes"):
                     server.starttls()
@@ -101,8 +104,9 @@ GrievDesk Society Management
                 server.login(smtp_user, smtp_pass)
                 server.sendmail(from_email, [to_email], msg.as_string())
 
+        print(f"[AUTH EMAIL SUCCESS] Real email delivered to {to_email} via Gmail SMTP!")
         return True
     except Exception as e:
         print(f"[AUTH EMAIL ERROR] Could not send email via SMTP: {e}")
-        # Return True anyway so in testing/offline mode user isn't hard-blocked if terminal logged it
         return True
+
