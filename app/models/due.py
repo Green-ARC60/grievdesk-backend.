@@ -18,6 +18,8 @@ class Due(db.Model):
     due_date = db.Column(db.Date, nullable=False)
     paid_status = db.Column(db.String(10), nullable=False, default=PaidStatus.UNPAID)
     paid_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    recipient_email = db.Column(db.String(255), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     user = db.relationship("User", foreign_keys=[user_id])
@@ -30,7 +32,11 @@ class Due(db.Model):
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "resident_name": self.user.name if self.user else None,
             "resident": self.user.name if self.user else None,
+            "gmail": self.recipient_email or (self.user.gmail if self.user else None),
+            "user_gmail": self.user.gmail if self.user else None,
+            "recipient_email": self.recipient_email,
             "flat_no": self.user.flat_no if self.user else None,
             "block_no": self.user.block_no if self.user else None,
             "month": self.month,
@@ -38,4 +44,6 @@ class Due(db.Model):
             "due_date": self.due_date.isoformat() if self.due_date else None,
             "paid_status": self.paid_status,
             "paid_at": self.paid_at.isoformat() if self.paid_at else None,
+            "notes": self.notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
