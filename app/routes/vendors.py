@@ -8,7 +8,7 @@ from app.models.complaint import Complaint, ComplaintStatus
 from app.models.ticket_event import TicketType, TicketAction
 from app.services.complaint_status import set_complaint_status
 from app.services.tickets import add_event
-from app.services.email import send_vendor_task_assigned_email
+from app.services.email import send_vendor_task_assigned_email, send_mass_vendor_work_order_email
 
 vendors_bp = Blueprint("vendors", __name__, url_prefix="/api/vendors")
 
@@ -232,4 +232,151 @@ def assign_vendor_task(vendor_id):
         "vendor_task": task.to_dict(),
         "complaint_status": complaint.status,
         "email_sent": email_dispatched,
+    }), 200
+
+
+@vendors_bp.post("/mass-assign")
+@login_required
+def mass_assign_vendor_tasks():
+    """
+    Mass Vendor Allocation & Workload Distribution:
+    Supports:
+    1. Single Vendor Mass Assignment: e.g. Assign 100 electrical complaints all to 1 vendor.
+    2. Multi-Vendor Workload Distribution: e.g. Split 100 complaints evenly or proportionally across 2, 3 or more vendors (e.g. 50/50 across 2 electricians).
+    Payload can be:
+    - {
+        "vendor_ids": [1] or [1, 2],
+        "complaint_ids": [101, 102, ...],
+        "notes": "Emergency surge inspections..."
+      }
+    - OR custom grouped assignments:
+      {
+        "assignments": [
+          { "vendor_id": 1, "complaint_ids": [101, 102, ...], "notes": "..." },
+          { "vendor_id": 2, "complaint_ids": [151, 152, ...], "notes": "..." }
+        ]
+      }
+    """
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+
+    plan = []
+    if "assignments" in data and isinstance(data["assignments"], list):
+        for item in data["assignments"]:
+            v_id = item.get("vendor_id")
+            c_ids = item.get("complaint_ids") or []
+            v_notes = item.get("notes") or data.get("notes") or ""
+            if v_id and c_ids:
+                plan.append({"vendor_id": v_id, "complaint_ids": c_ids, "notes": v_notes})
+    else:
+        vendor_ids = data.get("vendor_ids") or []
+        complaint_ids = data.get("complaint_ids") or []
+        notes = data.get("notes") or ""
+
+        if not vendor_ids or not complaint_ids:
+            return jsonify({"error": "Missing vendor_ids or complaint_ids"}), 400
+
+        k = len(vendor_ids)
+        if k == 1:
+            plan.append({"vendor_id": vendor_ids[0], "complaint_ids": complaint_ids, "notes": notes})
+        else:
+            chunks = [[] for _ in range(k)]
+            for idx, c_id in enumerate(complaint_ids):
+                chunks[idx % k].append(c_id)
+            for v_id, c_list in zip(vendor_ids, chunks):
+                if c_list:
+                    plan.append({"vendor_id": v_id, "complaint_ids": c_list, "notes": notes})
+
+    if not plan:
+        return jsonify({"error": "No valid assignments to perform."}), 400
+
+    results = []
+    total_assigned_count = 0
+
+    for item in plan:
+        v_id = item["vendor_id"]
+        c_ids = item["complaint_ids"]
+        v_notes = item["notes"]
+
+        vendor = db.session.get(Vendor, v_id)
+        if not vendor:
+            continue
+
+        assigned_summaries = []
+
+        for c_id in c_ids:
+            complaint = db.session.get(Complaint, c_id)
+            if not complaint:
+                continue
+
+            task = VendorTask(
+                vendor_id=vendor.id,
+                complaint_id=complaint.id,
+                assigned_by=user.id,
+                notes=v_notes or None,
+                status="in_progress"
+            )
+            db.session.add(task)
+
+            if complaint.status != ComplaintStatus.IN_PROGRESS:
+                set_complaint_status(
+                    complaint=complaint,
+                    new_status=ComplaintStatus.IN_PROGRESS,
+                    actor=user,
+                    event_note=f"Mass assigned to vendor {vendor.name} ({vendor.profession})"
+                )
+            else:
+                add_event(
+                    ticket_type=TicketType.COMPLAINT,
+                    ticket_id=complaint.id,
+                    action=TicketAction.ASSIGNED,
+                    detail=f"Vendor: {vendor.name} ({vendor.profession})",
+                    note=v_notes or f"Mass assigned to {vendor.name}",
+                    actor=user
+                )
+
+            flat_no = complaint.user.flat_no if complaint.user else ""
+            block_no = complaint.user.block_no if complaint.user else ""
+            res_name = complaint.user.name if complaint.user else "Resident Member"
+            assigned_summaries.append({
+                "id": complaint.id,
+                "flat_no": flat_no,
+                "block_no": block_no,
+                "resident_name": res_name,
+                "category": complaint.category or "Maintenance",
+                "severity": complaint.severity or "medium",
+                "description": complaint.translated_text or complaint.raw_text or "",
+            })
+            total_assigned_count += 1
+
+        db.session.commit()
+
+        email_sent = False
+        if assigned_summaries:
+            try:
+                email_sent = send_mass_vendor_work_order_email(
+                    vendor_email=vendor.email,
+                    vendor_name=vendor.name,
+                    vendor_profession=vendor.profession,
+                    tasks_summary=assigned_summaries,
+                    total_count=len(assigned_summaries),
+                    notes=v_notes,
+                    assigned_by_name=user.name,
+                    assigned_by_role=user.role,
+                )
+            except Exception as e:
+                print(f"[MASS VENDOR EMAIL ERROR] Failed to dispatch to {vendor.email}: {e}")
+
+        results.append({
+            "vendor_id": vendor.id,
+            "vendor_name": vendor.name,
+            "vendor_profession": vendor.profession,
+            "count": len(assigned_summaries),
+            "email_sent": email_sent,
+        })
+
+    return jsonify({
+        "message": f"Successfully assigned {total_assigned_count} tickets across {len(results)} vendor(s).",
+        "total_assigned": total_assigned_count,
+        "results": results,
     }), 200

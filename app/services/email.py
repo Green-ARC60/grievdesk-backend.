@@ -565,3 +565,151 @@ GrievDesk Society Management
     return _dispatch_email(to_email, subject, plain_text, html_content)
 
 
+def send_mass_vendor_work_order_email(
+    vendor_email: str,
+    vendor_name: str,
+    vendor_profession: str,
+    tasks_summary: list,
+    total_count: int,
+    notes: str = None,
+    assigned_by_name: str = "Society Secretary",
+    assigned_by_role: str = "Secretary",
+) -> bool:
+    """
+    Sends a consolidated MASS WORK ORDER invoice email to a vendor when assigned a batch
+    of complaints (e.g. 50-100 electrical or plumbing tickets) in bulk.
+    Dispatched via Resend API (with SMTP fallback).
+    """
+    subject = f"GrievDesk Mass Work Order: [Batch of {total_count} Tickets] - {vendor_profession} ({vendor_name})"
+
+    notes_display = notes.strip() if notes and notes.strip() else "No special batch instructions provided."
+
+    plain_rows = []
+    for idx, t in enumerate(tasks_summary, 1):
+        flat_info = f"Flat {t.get('flat_no', '')}, Block {t.get('block_no', '')}" if t.get('flat_no') else "Common Area"
+        plain_rows.append(
+            f"#{t.get('id')} | {flat_info} | {t.get('category', 'General')} ({t.get('severity', 'medium')}) | {t.get('description', '')[:70]}"
+        )
+    plain_list = "\n".join(plain_rows[:120])
+    if len(tasks_summary) > 120:
+        plain_list += f"\n... and {len(tasks_summary) - 120} more tickets in this batch."
+
+    plain_text = f"""Hello {vendor_name},
+
+You have been assigned a MASS BATCH of {total_count} society service tasks on GrievDesk Residential Portal.
+
+BATCH DETAILS:
+--------------
+Vendor: {vendor_name} ({vendor_profession})
+Total Assigned Tickets: {total_count}
+Assigned By: {assigned_by_name} ({assigned_by_role.capitalize()})
+Status: In Progress
+
+BATCH INSTRUCTIONS / NOTES (Written / Voice Note in Local Language):
+{notes_display}
+
+ASSIGNED TICKETS LIST:
+------------------------------------------------------------
+{plain_list}
+------------------------------------------------------------
+
+Please coordinate with society management and the residents to attend to these tasks systematically.
+All {total_count} tickets have been moved to "IN PROGRESS" status on the society portal.
+
+Regards,
+GrievDesk Society Management
+"""
+
+    html_rows = []
+    for idx, t in enumerate(tasks_summary, 1):
+        flat_info = f"Flat {t.get('flat_no', '-')}, Block {t.get('block_no', '-')}"
+        desc_snippet = (t.get('description') or 'No description')[:90]
+        sev = (t.get('severity') or 'medium').lower()
+        sev_color = "#DC2626" if sev == "high" else "#D97706" if sev == "medium" else "#2563EB"
+        html_rows.append(f"""
+        <tr>
+          <td style="padding: 7px 10px; border-bottom: 1px solid #F1F3F5; font-weight: 700; color: #0F52BA;">#{t.get('id')}</td>
+          <td style="padding: 7px 10px; border-bottom: 1px solid #F1F3F5; font-weight: 600;">{flat_info}</td>
+          <td style="padding: 7px 10px; border-bottom: 1px solid #F1F3F5;">{t.get('category', 'General')}</td>
+          <td style="padding: 7px 10px; border-bottom: 1px solid #F1F3F5; font-weight: 700; color: {sev_color}; text-transform: uppercase; font-size: 11px;">{sev}</td>
+          <td style="padding: 7px 10px; border-bottom: 1px solid #F1F3F5; color: #475569; font-size: 12px;">{desc_snippet}</td>
+        </tr>""")
+    html_table_body = "".join(html_rows)
+
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #EEF0F3; margin: 0; padding: 24px; color: #1F262E; }}
+    .card {{ max-width: 620px; margin: 0 auto; background: #FFFFFF; border-radius: 12px; border: 1px solid #AEB6C2; padding: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }}
+    .header {{ font-size: 20px; font-weight: 700; color: #0F52BA; margin-bottom: 4px; }}
+    .society {{ font-size: 13px; color: #4A5563; margin-bottom: 20px; border-bottom: 1px solid #E3E6EB; padding-bottom: 12px; }}
+    .batch-banner {{ background: linear-gradient(135deg, #0F52BA 0%, #1E3A8A 100%); color: #FFFFFF; border-radius: 8px; padding: 18px 20px; margin: 18px 0; display: flex; justify-content: space-between; align-items: center; }}
+    .batch-count {{ font-size: 28px; font-weight: 800; letter-spacing: 0.5px; line-height: 1; }}
+    .batch-sub {{ font-size: 12px; opacity: 0.9; margin-top: 4px; }}
+    .status-badge {{ background-color: #F59E0B; color: #FFFFFF; font-size: 11px; font-weight: 700; text-transform: uppercase; padding: 5px 12px; border-radius: 999px; letter-spacing: 0.5px; }}
+    .notes-box {{ background-color: #FEF3C7; border-left: 4px solid #F59E0B; border-radius: 6px; padding: 14px 16px; margin: 20px 0; font-size: 13px; }}
+    .notes-title {{ font-weight: 700; color: #92400E; margin-bottom: 6px; }}
+    .notes-content {{ color: #78350F; line-height: 1.5; white-space: pre-wrap; }}
+    .table-container {{ margin: 20px 0; max-height: 380px; overflow-y: auto; border: 1px solid #E2E8F0; border-radius: 8px; }}
+    .work-table {{ width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; }}
+    .work-table th {{ background-color: #F8FAFC; padding: 9px 10px; font-weight: 700; color: #475569; border-bottom: 1px solid #CBD5E1; text-transform: uppercase; font-size: 11px; }}
+    .footer {{ font-size: 12px; color: #64748B; margin-top: 24px; border-top: 1px solid #E3E6EB; padding-top: 16px; line-height: 1.5; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">GrievDesk &bull; Mass Work Order Dispatch</div>
+    <div class="society">Society Maintenance &amp; Workload Distribution Desk</div>
+
+    <p>Hello <strong>{vendor_name}</strong> ({vendor_profession}),</p>
+
+    <div class="batch-banner">
+      <div>
+        <div class="batch-count">{total_count} Tickets Assigned</div>
+        <div class="batch-sub">Assigned by {assigned_by_name} ({assigned_by_role.capitalize()}) &bull; Category: {vendor_profession}</div>
+      </div>
+      <span class="status-badge">IN PROGRESS</span>
+    </div>
+
+    <div class="notes-box">
+      <div class="notes-title">&#x1F4DD; Mass Assignment Instructions (Local Language):</div>
+      <div class="notes-content">{notes_display}</div>
+    </div>
+
+    <div style="font-size: 13px; font-weight: 700; color: #1E293B; margin-top: 16px;">Itemized Ticket Manifest:</div>
+    <div class="table-container">
+      <table class="work-table">
+        <thead>
+          <tr>
+            <th>Ticket</th>
+            <th>Location</th>
+            <th>Category</th>
+            <th>Priority</th>
+            <th>Issue Summary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {html_table_body}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      Please organize your tools and materials to visit the listed flats. All {total_count} tickets are now in <strong>In Progress</strong> status on the GrievDesk society portal. Notify the society management upon completion of each flat.
+    </div>
+  </div>
+</body>
+</html>"""
+
+    print(f"\n=======================================================")
+    print(f"[MASS VENDOR ALLOCATION EMAIL] Batch of {total_count} Tasks Assigned to {vendor_name} ({vendor_email}):")
+    print(f"Profession: {vendor_profession} | Tickets Count: {total_count}")
+    print(f"Notes: {notes_display}")
+    print(f"=======================================================\n")
+
+    return _dispatch_email(vendor_email, subject, plain_text, html_content)
+
+
+
