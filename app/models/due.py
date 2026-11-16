@@ -12,6 +12,7 @@ class Due(db.Model):
     __tablename__ = "dues"
 
     id = db.Column(db.Integer, primary_key=True)
+    society_id = db.Column(db.Integer, db.ForeignKey("societies.id"), nullable=False, default=1)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     month = db.Column(db.String(7), nullable=False)  # e.g. "2026-09"
     amount = db.Column(db.Numeric(10, 2), nullable=False)

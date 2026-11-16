@@ -21,11 +21,12 @@ vendors_bp = Blueprint("vendors", __name__, url_prefix="/api/vendors")
 @login_required
 def list_vendors():
     """
-    List all society vendors/helpers.
+    List all society vendors/helpers for the current user's society.
     Permitted to all authenticated members (Residents, Committee, Secretary).
     Supports ?profession= and ?search=
     """
-    query = Vendor.query
+    user = current_user()
+    query = Vendor.query.filter(Vendor.society_id == user.society_id)
 
     profession = request.args.get("profession")
     if profession and profession.strip() and profession.lower() != "all":
@@ -87,6 +88,7 @@ def create_vendor():
             "message": "Name, profession, email, phone number, and address are required."
         }), 400
 
+    user = current_user()
     vendor = Vendor(
         name=name,
         profession=profession,
@@ -94,6 +96,7 @@ def create_vendor():
         phone=phone,
         address=address,
         notes=notes,
+        society_id=user.society_id,
     )
     db.session.add(vendor)
     db.session.commit()
@@ -173,6 +176,8 @@ def assign_vendor_task(vendor_id):
     complaint = db.session.get(Complaint, complaint_id)
     if not complaint:
         return jsonify({"error": "Complaint not found"}), 404
+    if complaint.is_deleted:
+        return jsonify({"error": "Cannot assign a deleted complaint."}), 400
 
     # 1. Create the VendorTask
     task = VendorTask(
@@ -332,7 +337,7 @@ def mass_assign_vendor_tasks():
 
         for c_id in c_ids:
             complaint = db.session.get(Complaint, c_id)
-            if not complaint:
+            if not complaint or complaint.is_deleted:
                 continue
 
             task = VendorTask(

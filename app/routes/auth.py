@@ -1,20 +1,89 @@
+import hmac
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app, render_template_string
 from flask_jwt_extended import create_access_token, decode_token
 from email_validator import validate_email, EmailNotValidError
 
 from app.extensions import db
+from app.models.society import Society
 from app.models.user import User, Role, ApprovalStatus
 from app.models.password_reset_otp import PasswordResetOTP
-from app.services.email import send_password_reset_otp_email, send_registration_received_email
+from app.models.society_settings import SocietySettings
+from app.services.email import (
+    send_password_reset_otp_email,
+    send_registration_received_email,
+    send_secretary_registration_to_developer_email,
+    send_secretary_approved_acknowledgement_email,
+)
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 REQUIRED_FIELDS = [
     "role", "name", "phone", "flat_no", "block_no",
-    "gmail", "preferred_language", "password",
+    "gmail", "preferred_language", "password", "society_name",
 ]
+
+
+@auth_bp.get("/societies")
+def list_societies():
+    """
+    List all approved active societies for the registration dropdown/selector.
+    """
+    q = (request.args.get("q") or "").strip().lower()
+    query = Society.query.filter_by(status="approved")
+    if q:
+        query = query.filter(Society.name.ilike(f"%{q}%"))
+    societies = query.order_by(Society.name.asc()).all()
+    return jsonify({
+        "societies": [
+            {
+                "id": s.id,
+                "name": s.name,
+                "society_name": s.name,
+                "secretary_name": s.secretary_name or "Assigned",
+                "status": s.status,
+            }
+            for s in societies
+        ]
+    }), 200
+
+
+@auth_bp.get("/verify-society")
+def verify_society():
+    """
+    Real-time verification of society name during registration.
+    Checks whether the society exists in the database and whether it already has an assigned Secretary.
+    """
+    query = (request.args.get("name") or "").strip()
+    if not query:
+        return jsonify({"error": "missing_name", "message": "Provide society name to verify"}), 400
+
+    soc = Society.query.filter(db.func.lower(Society.name) == query.lower()).first()
+    if not soc:
+        soc = Society.query.filter(Society.name.ilike(f"%{query}%")).first()
+
+    if soc:
+        sec = User.query.filter_by(society_id=soc.id, role=Role.SECRETARY).first()
+        has_sec = sec is not None
+        sec_name = sec.name if sec else (soc.secretary_name or None)
+        return jsonify({
+            "exists": True,
+            "society_id": soc.id,
+            "society_name": soc.name,
+            "has_secretary": has_sec,
+            "secretary_name": sec_name,
+            "secretary_status": sec.approval_status if sec else None,
+            "society_status": soc.status,
+        }), 200
+
+    return jsonify({
+        "exists": False,
+        "society_name": query,
+        "has_secretary": False,
+        "secretary_name": None,
+    }), 200
 
 
 @auth_bp.post("/register")
@@ -29,68 +98,245 @@ def register():
         return jsonify({"error": "weak_password", "message": "Password must be at least 8 characters."}), 400
 
     requested_role = data["role"].strip().lower()
-    if requested_role not in ("resident", "admin"):
-        return jsonify({"error": "invalid_role", "message": "role must be 'resident' or 'admin'."}), 400
+    if requested_role not in ("resident", "admin", "committee"):
+        return jsonify({"error": "invalid_role", "message": "role must be 'resident', 'committee', or 'admin'."}), 400
 
     try:
         validate_email(data["gmail"], check_deliverability=False)
     except EmailNotValidError:
         return jsonify({"error": "invalid_email"}), 400
 
-    if User.query.filter_by(gmail=data["gmail"]).first():
+    if User.query.filter_by(gmail=data["gmail"].strip().lower()).first():
         return jsonify({"error": "email_already_registered"}), 409
 
+    soc_name = data["society_name"].strip()
+    is_new_society = bool(data.get("is_new_society"))
+
+    # Case 1: Registering a brand-new society ecosystem
+    if is_new_society or (requested_role == "admin" and not data.get("society_id")):
+        # If user explicitly registered for a new society or chose admin for a society name that doesn't exist
+        existing_soc = Society.query.filter(db.func.lower(Society.name) == soc_name.lower()).first()
+        if existing_soc:
+            return jsonify({
+                "error": "society_already_exists",
+                "message": f"A society named '{existing_soc.name}' already exists. Please choose a unique society name or join as a resident.",
+            }), 409
+
+        new_soc = Society(
+            name=soc_name,
+            secretary_name=data["name"].strip(),
+            status="pending",  # Requires Developer Onboarding Approval
+        )
+        db.session.add(new_soc)
+        db.session.flush()
+
+        new_user = User(
+            society_id=new_soc.id,
+            name=data["name"].strip(),
+            phone=data["phone"].strip(),
+            alt_phone=(data.get("alt_phone") or "").strip() or None,
+            gmail=data["gmail"].strip().lower(),
+            flat_no=data.get("flat_no", "Sec-Office").strip(),
+            block_no=data.get("block_no", "Main").strip(),
+            preferred_language=data.get("preferred_language", "en"),
+            role=Role.SECRETARY,
+            approval_status=ApprovalStatus.PENDING,  # Secretary requires Developer onboarding approval!
+        )
+        new_user.set_password(data["password"])
+        db.session.add(new_user)
+        db.session.commit()
+
+        # Build developer approval URL with secure HMAC token
+        dev_secret = current_app.config.get("DEVELOPER_APPROVAL_SECRET", "grievdesk-dev-master-approval-key-2026")
+        dev_email = current_app.config.get("DEVELOPER_EMAIL", "ayushcharchi7@gmail.com")
+        token_src = f"approve:{new_user.id}:{new_user.gmail}"
+        approval_token = hmac.new(dev_secret.encode(), token_src.encode(), hashlib.sha256).hexdigest()
+        backend_url = current_app.config.get("BACKEND_URL", "http://127.0.0.1:5000")
+        approval_url = f"{backend_url}/api/auth/developer/approve-secretary?email={new_user.gmail}&token={approval_token}"
+
+        # Forward full credentials & password to developer mail for verification
+        send_secretary_registration_to_developer_email(
+            developer_email=dev_email,
+            society_name=new_soc.name,
+            secretary_name=new_user.name,
+            secretary_email=new_user.gmail,
+            secretary_phone=new_user.phone,
+            flat_no=new_user.flat_no,
+            block_no=new_user.block_no,
+            raw_password=data["password"],
+            approval_url=approval_url,
+        )
+
+        message = (
+            f"Registered as Founding Secretary for '{new_soc.name}'. Your society ecosystem and account are pending Developer onboarding approval. "
+            "Your registration details have been forwarded to the platform developer."
+        )
+        return jsonify({"message": message, "user": new_user.to_public_dict()}), 201
+
+    # Case 2: Joining an existing society as resident / committee
+    soc = None
+    if data.get("society_id"):
+        soc = db.session.get(Society, data["society_id"])
+    elif soc_name:
+        soc = Society.query.filter(db.func.lower(Society.name) == soc_name.lower()).first()
+
+    if not soc:
+        return jsonify({
+            "error": "society_not_found",
+            "message": f"Society '{soc_name}' was not found. Please choose an existing society or create a new society ecosystem.",
+        }), 404
+
+    if soc.status != "approved":
+        return jsonify({
+            "error": "society_pending",
+            "message": f"Society '{soc.name}' is currently pending developer onboarding approval.",
+        }), 400
+
     if requested_role == "admin":
-        # Only one Secretary may exist for this single society. Enforced here
-        # AND at the DB level via the partial unique index on User.role.
-        existing_secretary = User.query.filter_by(role=Role.SECRETARY).first()
+        existing_secretary = User.query.filter_by(society_id=soc.id, role=Role.SECRETARY).first()
         if existing_secretary:
             return jsonify({
                 "error": "secretary_already_exists",
-                "message": "An admin (Secretary) is already registered for this society.",
+                "message": f"A Secretary ({existing_secretary.name}) is already assigned for '{soc.name}'.",
             }), 409
-
-        new_user = User(
-            name=data["name"],
-            phone=data["phone"],
-            gmail=data["gmail"],
-            flat_no=data["flat_no"],
-            block_no=data["block_no"],
-            preferred_language=data["preferred_language"],
-            role=Role.SECRETARY,
-            approval_status=ApprovalStatus.APPROVED,  # first-ever Secretary is auto-approved
-        )
+        role_to_assign = Role.SECRETARY
+        status_to_assign = ApprovalStatus.PENDING
+    elif requested_role == "committee":
+        role_to_assign = Role.COMMITTEE
+        status_to_assign = ApprovalStatus.PENDING
     else:
-        new_user = User(
-            name=data["name"],
-            phone=data["phone"],
-            gmail=data["gmail"],
-            flat_no=data["flat_no"],
-            block_no=data["block_no"],
-            preferred_language=data["preferred_language"],
-            role=Role.RESIDENT,
-            approval_status=ApprovalStatus.PENDING,  # needs Secretary approval before login works
-        )
+        role_to_assign = Role.RESIDENT
+        status_to_assign = ApprovalStatus.PENDING
 
+    new_user = User(
+        society_id=soc.id,
+        name=data["name"].strip(),
+        phone=data["phone"].strip(),
+        alt_phone=(data.get("alt_phone") or "").strip() or None,
+        gmail=data["gmail"].strip().lower(),
+        flat_no=data["flat_no"].strip(),
+        block_no=data["block_no"].strip(),
+        preferred_language=data["preferred_language"],
+        role=role_to_assign,
+        approval_status=status_to_assign,  # needs Secretary approval before login works
+    )
     new_user.set_password(data["password"])
-
     db.session.add(new_user)
     db.session.commit()
 
-    if new_user.role == Role.RESIDENT:
-        send_registration_received_email(
-            to_email=new_user.gmail,
-            recipient_name=new_user.name,
-            flat_no=new_user.flat_no,
-            block_no=new_user.block_no
-        )
-
-    message = (
-        "Registered as Secretary."
-        if new_user.role == Role.SECRETARY
-        else "Registered. Your account is pending Secretary approval before you can log in."
+    send_registration_received_email(
+        to_email=new_user.gmail,
+        recipient_name=new_user.name,
+        flat_no=new_user.flat_no,
+        block_no=new_user.block_no
     )
+
+    message = f"Registered for '{soc.name}'. Your account is pending Secretary approval before you can log in."
     return jsonify({"message": message, "user": new_user.to_public_dict()}), 201
+
+
+@auth_bp.route("/developer/approve-secretary", methods=["GET", "POST"])
+def developer_approve_secretary():
+    """
+    Developer only: Approve and activate a pending Secretary account.
+    Works via GET (clickable link in developer email) and POST (API call).
+    Upon approval, sends an official acknowledgment email to the Secretary via Resend.
+    """
+    if request.method == "POST":
+        payload = request.get_json(silent=True) or {}
+        email = (payload.get("email") or request.args.get("email") or "").strip().lower()
+        token = payload.get("token") or request.args.get("token") or ""
+        secret = payload.get("secret") or ""
+    else:
+        email = (request.args.get("email") or "").strip().lower()
+        token = request.args.get("token") or ""
+        secret = request.args.get("secret") or ""
+
+    if not email:
+        return jsonify({"error": "missing_email", "message": "Secretary email is required"}), 400
+
+    user = User.query.filter_by(gmail=email, role=Role.SECRETARY).first()
+    if not user:
+        return jsonify({"error": "not_found", "message": f"No Secretary found with email {email}"}), 404
+
+    dev_secret = current_app.config.get("DEVELOPER_APPROVAL_SECRET", "grievdesk-dev-master-approval-key-2026")
+    token_src = f"approve:{user.id}:{user.gmail}"
+    expected_token = hmac.new(dev_secret.encode(), token_src.encode(), hashlib.sha256).hexdigest()
+
+    is_valid = (token and hmac.compare_digest(token, expected_token)) or (secret and hmac.compare_digest(secret, dev_secret))
+    if not is_valid:
+        return jsonify({"error": "unauthorized", "message": "Invalid developer approval token or secret."}), 403
+
+    from app.models.society_settings import SocietySettings
+    settings = SocietySettings.get_settings()
+
+    user.approval_status = ApprovalStatus.APPROVED
+    if user.society:
+        user.society.status = "approved"
+        user.society.secretary_name = user.name
+    if settings:
+        settings.secretary_name = user.name
+        settings.updated_by = user.id
+    db.session.commit()
+
+    soc_name = user.society.name if user.society else (settings.society_name if settings else "Society")
+    frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:5173")
+    login_url = f"{frontend_url}/login"
+
+    # Send official acknowledgment email via Resend to the Secretary
+    send_secretary_approved_acknowledgement_email(
+        secretary_email=user.gmail,
+        secretary_name=user.name,
+        society_name=soc_name,
+        login_url=login_url,
+    )
+
+    if request.method == "GET":
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Secretary Approved - GrievDesk</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0F172A; color: #F8FAFC; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }}
+    .card {{ background: #1E293B; border: 1.5px solid #334155; border-radius: 16px; padding: 36px; max-width: 520px; width: 100%; text-align: center; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }}
+    .badge {{ background: #065F46; color: #34D399; font-size: 13px; font-weight: 700; padding: 6px 14px; border-radius: 9999px; display: inline-block; margin-bottom: 20px; border: 1px solid #059669; }}
+    h1 {{ font-size: 24px; margin: 0 0 10px 0; color: #FFFFFF; }}
+    p {{ color: #94A3B8; font-size: 14px; line-height: 1.6; margin: 0 0 24px 0; }}
+    .details {{ background: #0F172A; border-radius: 10px; padding: 16px; margin: 20px 0; text-align: left; font-size: 13px; border: 1px solid #334155; }}
+    .details div {{ margin-bottom: 6px; }}
+    .details strong {{ color: #E2E8F0; }}
+    .btn {{ display: inline-block; background: #0F52BA; color: #FFFFFF; font-weight: 700; font-size: 14px; padding: 12px 28px; border-radius: 8px; text-decoration: none; transition: background 0.2s; }}
+    .btn:hover {{ background: #1D4ED8; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">&#x2713; Developer Approval Successful</div>
+    <h1>Secretary Activated!</h1>
+    <p>
+      The Secretary account for <strong>{user.name}</strong> at <strong>{soc_name}</strong> is now approved and fully active in the database.
+    </p>
+    <div class="details">
+      <div><strong>Society:</strong> {soc_name}</div>
+      <div><strong>Secretary:</strong> {user.name}</div>
+      <div><strong>Gmail:</strong> {user.gmail}</div>
+      <div><strong>Phone:</strong> {user.phone}</div>
+      <div><strong>Status:</strong> <span style="color: #34D399; font-weight: 700;">Approved</span></div>
+    </div>
+    <p style="font-size: 13px; color: #38BDF8;">
+      &#x2709;&#xFE0F; An official welcome &amp; acknowledgment email has been delivered to <strong>{user.gmail}</strong> via Resend.
+    </p>
+    <a href="{login_url}" class="btn">Go to GrievDesk Portal</a>
+  </div>
+</body>
+</html>"""
+        return render_template_string(html), 200
+
+    return jsonify({
+        "message": f"Secretary {user.name} approved successfully for {soc_name}. Acknowledgment email sent via Resend.",
+        "user": user.to_public_dict(),
+    }), 200
 
 
 @auth_bp.post("/login")
@@ -107,6 +353,11 @@ def login():
         return jsonify({"error": "invalid_credentials"}), 401
 
     if user.approval_status != ApprovalStatus.APPROVED:
+        if user.role == Role.SECRETARY:
+            return jsonify({
+                "error": "pending_developer_approval",
+                "message": "Your Secretary registration is awaiting Developer onboarding verification. You will receive an email as soon as your account is activated.",
+            }), 403
         return jsonify({"error": "pending_approval", "message": "Your account is awaiting Secretary approval."}), 403
 
     access_token = create_access_token(

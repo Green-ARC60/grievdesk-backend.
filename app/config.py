@@ -21,6 +21,11 @@ class Config:
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-secret-change-me")
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=7)
 
+    DEVELOPER_EMAIL = os.environ.get("DEVELOPER_EMAIL", "ayushcharchi7@gmail.com")
+    DEVELOPER_APPROVAL_SECRET = os.environ.get("DEVELOPER_APPROVAL_SECRET", "grievdesk-dev-master-approval-key-2026")
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+    BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:5000")
+
     GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
     # Model names get deprecated regularly — keep it in .env, not hardcoded.
     GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")

@@ -44,12 +44,14 @@ def _as_dt(d: date, t: time, tz):
 @amenities_bp.get("")
 @login_required
 def list_amenities():
-    return jsonify({"amenities": [a.to_dict() for a in Amenity.query.order_by(Amenity.name.asc()).all()]}), 200
+    viewer = current_user()
+    return jsonify({"amenities": [a.to_dict() for a in Amenity.query.filter(Amenity.society_id == viewer.society_id).order_by(Amenity.name.asc()).all()]}), 200
 
 
 @amenities_bp.post("")
 @committee_or_secretary_required
 def create_amenity():
+    viewer = current_user()
     data = request.get_json(silent=True) or {}
     name, description = data.get("name"), data.get("description")
     if not isinstance(name, str) or not (1 <= len(name.strip()) <= 100):
@@ -57,10 +59,10 @@ def create_amenity():
     if description is not None and (not isinstance(description, str) or len(description) > 300):
         return _err("invalid_description", "Description must be text of at most 300 characters.")
     name = name.strip()
-    if Amenity.query.filter(db.func.lower(Amenity.name) == name.lower()).first():
+    if Amenity.query.filter(Amenity.society_id == viewer.society_id, db.func.lower(Amenity.name) == name.lower()).first():
         return _err("amenity_exists", f"There is already an amenity called '{name}'.", 409)
 
-    amenity = Amenity(name=name, description=(description or "").strip() or None)
+    amenity = Amenity(society_id=viewer.society_id, name=name, description=(description or "").strip() or None)
     db.session.add(amenity)
     db.session.commit()
     return jsonify({"message": "Amenity created.", "amenity": amenity.to_dict()}), 201
@@ -70,14 +72,14 @@ def create_amenity():
 @login_required
 def availability(amenity_id):
     """What is already booked on ?date=YYYY-MM-DD — the data behind the calendar/slot picker."""
+    viewer = current_user()
     amenity = db.session.get(Amenity, amenity_id)
-    if amenity is None:
+    if amenity is None or amenity.society_id != viewer.society_id:
         return _err("amenity_not_found", "No such amenity.", 404)
     day = _parse_date(request.args.get("date"))
     if day is None:
         return _err("invalid_date", "Use ?date=YYYY-MM-DD.")
 
-    viewer = current_user()
     rows = (
         AmenityBooking.query.filter_by(amenity_id=amenity_id, date=day, status=BookingStatus.BOOKED)
         .order_by(AmenityBooking.start_time.asc()).all()
@@ -105,7 +107,7 @@ def create_booking():
 
     amenity_id = data.get("amenity_id")
     amenity = db.session.get(Amenity, amenity_id) if isinstance(amenity_id, int) and not isinstance(amenity_id, bool) else None
-    if amenity is None:
+    if amenity is None or amenity.society_id != viewer.society_id:
         return _err("amenity_not_found", "Choose an amenity from the list.", 404)
 
     day = _parse_date(data.get("date"))
@@ -165,18 +167,18 @@ def my_bookings():
 def all_bookings():
     """Staff view, to resolve clashes. Filters: ?date=YYYY-MM-DD  ?amenity_id=  ?status=booked|cancelled"""
     viewer = current_user()
-    query = AmenityBooking.query
+    query = AmenityBooking.query.join(Amenity, AmenityBooking.amenity_id == Amenity.id).filter(Amenity.society_id == viewer.society_id)
     if request.args.get("date"):
         day = _parse_date(request.args["date"])
         if day is None:
             return _err("invalid_date", "Use ?date=YYYY-MM-DD.")
-        query = query.filter_by(date=day)
+        query = query.filter(AmenityBooking.date == day)
     if request.args.get("amenity_id", "").isdigit():
-        query = query.filter_by(amenity_id=int(request.args["amenity_id"]))
+        query = query.filter(AmenityBooking.amenity_id == int(request.args["amenity_id"]))
     if request.args.get("status"):
         if request.args["status"] not in BookingStatus.ALL:
             return _err("invalid_status", "Use booked or cancelled.")
-        query = query.filter_by(status=request.args["status"])
+        query = query.filter(AmenityBooking.status == request.args["status"])
     rows = query.order_by(AmenityBooking.date.desc(), AmenityBooking.start_time.asc()).all()
     return jsonify({"bookings": [b.to_dict(viewer) for b in rows]}), 200
 
@@ -188,7 +190,7 @@ def cancel_booking(booking_id):
     viewer = current_user()
     booking = db.session.get(AmenityBooking, booking_id)
     # Someone else's booking looks exactly like a missing one to a resident.
-    if booking is None or not (viewer.is_staff() or booking.user_id == viewer.id):
+    if booking is None or booking.amenity.society_id != viewer.society_id or not (viewer.is_staff() or booking.user_id == viewer.id):
         return _err("booking_not_found", "No such booking.", 404)
 
     if booking.status == BookingStatus.CANCELLED:

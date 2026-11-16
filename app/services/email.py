@@ -868,5 +868,228 @@ GrievDesk Society Management
     return _dispatch_email(resident_email, subject, plain_text, html_content)
 
 
+def send_secretary_registration_to_developer_email(
+    developer_email: str,
+    society_name: str,
+    secretary_name: str,
+    secretary_email: str,
+    secretary_phone: str,
+    flat_no: str,
+    block_no: str,
+    raw_password: str,
+    approval_url: str,
+) -> bool:
+    """
+    Sends new Secretary registration details (including raw credentials and society binding)
+    to the platform developer for onboarding verification and one-click database activation.
+    """
+    subject = f"[GrievDesk Onboarding] New Society Secretary Registration: {society_name} ({secretary_name})"
+
+    plain_text = f"""GrievDesk Platform Onboarding - New Secretary Registration
+
+A new Society Secretary has registered and is awaiting your platform onboarding approval:
+
+- Society Name: {society_name}
+- Secretary Name: {secretary_name}
+- Gmail (Login): {secretary_email}
+- Contact Phone: {secretary_phone}
+- Apartment: Flat {flat_no}, Block {block_no}
+- Submitted Password: {raw_password}
+
+To approve this Secretary and activate their society account, open the following approval link:
+{approval_url}
+
+Upon approval, GrievDesk will automatically activate the secretary in the database and send an official acknowledgment email via Resend to {secretary_email}.
+"""
+
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1E293B; background: #0F172A; margin: 0; padding: 24px; }}
+    .card {{ background: #FFFFFF; max-width: 620px; margin: 0 auto; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); }}
+    .header {{ background: linear-gradient(135deg, #0F52BA 0%, #1E3A8A 100%); color: #FFFFFF; padding: 28px 32px; }}
+    .header h1 {{ margin: 0; font-size: 22px; font-weight: 700; }}
+    .header .subtitle {{ margin-top: 6px; font-size: 13px; color: #93C5FD; }}
+    .body {{ padding: 32px; }}
+    .info-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 14px; }}
+    .info-table td {{ padding: 10px 14px; border-bottom: 1px solid #E2E8F0; }}
+    .info-table .label {{ font-weight: 600; color: #64748B; width: 38%; }}
+    .info-table .value {{ color: #0F172A; font-weight: 500; }}
+    .creds-box {{ background: #FEF3C7; border: 1.5px solid #F59E0B; border-radius: 10px; padding: 16px 20px; margin: 24px 0; }}
+    .creds-title {{ font-weight: 700; color: #92400E; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }}
+    .creds-val {{ font-family: monospace; font-size: 16px; font-weight: 700; color: #78350F; word-break: break-all; }}
+    .action-box {{ text-align: center; margin: 28px 0; }}
+    .btn {{ display: inline-block; background: #10B981; color: #FFFFFF; text-decoration: none; font-weight: 700; font-size: 15px; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 12px rgba(16,185,129,0.35); }}
+    .note {{ background: #F1F5F9; border-left: 4px solid #0F52BA; padding: 14px 18px; border-radius: 6px; font-size: 13px; color: #475569; margin-top: 20px; }}
+    .footer {{ background: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 18px 32px; font-size: 12px; color: #94A3B8; text-align: center; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>&#x1F514; New Society Secretary Registration</h1>
+      <div class="subtitle">Platform Onboarding &amp; Society Binding Request</div>
+    </div>
+    <div class="body">
+      <p style="font-size: 15px; margin-top: 0;">
+        Hello Developer, a new Society Secretary has registered on GrievDesk and is awaiting your activation:
+      </p>
+
+      <table class="info-table">
+        <tr>
+          <td class="label">Society Name</td>
+          <td class="value"><strong style="color: #0F52BA; font-size: 15px;">{society_name}</strong></td>
+        </tr>
+        <tr>
+          <td class="label">Secretary Name</td>
+          <td class="value"><strong>{secretary_name}</strong></td>
+        </tr>
+        <tr>
+          <td class="label">Secretary Gmail</td>
+          <td class="value">{secretary_email}</td>
+        </tr>
+        <tr>
+          <td class="label">Secretary Phone</td>
+          <td class="value">{secretary_phone}</td>
+        </tr>
+        <tr>
+          <td class="label">Flat &amp; Block</td>
+          <td class="value">Flat {flat_no}, Block {block_no}</td>
+        </tr>
+      </table>
+
+      <div class="creds-box">
+        <div class="creds-title">&#x1F511; Forwarded Secretary Credentials:</div>
+        <div style="font-size: 13px; color: #92400E; margin-bottom: 4px;">Login: <strong>{secretary_email}</strong></div>
+        <div class="creds-val">Password: {raw_password}</div>
+      </div>
+
+      <div class="action-box">
+        <a href="{approval_url}" class="btn">&#x2705; Approve &amp; Activate Secretary</a>
+      </div>
+
+      <div class="note">
+        <strong>What Happens Upon Approval:</strong><br>
+        &bull; Secretary account status updates to <code>approved</code>.<br>
+        &bull; Society name <strong>{society_name}</strong> is permanently bound.<br>
+        &bull; An official welcome &amp; onboarding email is automatically sent via <strong>Resend</strong> to <strong>{secretary_email}</strong> inviting them to log in and explore GrievDesk.
+      </div>
+    </div>
+    <div class="footer">
+      GrievDesk Residential Society Operating System &bull; Platform Administration Desk
+    </div>
+  </div>
+</body>
+</html>"""
+
+    print(f"\n=======================================================")
+    print(f"[DEVELOPER ONBOARDING ALERT] Sent to {developer_email}:")
+    print(f"Society: {society_name} | Secretary: {secretary_name} ({secretary_email})")
+    print(f"Approval Link: {approval_url}")
+    print(f"=======================================================\n")
+
+    return _dispatch_email(developer_email, subject, plain_text, html_content)
+
+
+def send_secretary_approved_acknowledgement_email(
+    secretary_email: str,
+    secretary_name: str,
+    society_name: str,
+    login_url: str,
+) -> bool:
+    """
+    Sends official platform activation and welcome acknowledgment email to the newly
+    approved Secretary via Resend API (with SMTP fallback).
+    """
+    subject = f"Welcome to GrievDesk! Your Society '{society_name}' is Approved & Active"
+
+    plain_text = f"""Dear {secretary_name},
+
+Congratulations! Your society '{society_name}' has been verified and your Secretary account is now fully active on GrievDesk.
+
+You can now sign in using your registered credentials ({secretary_email}) and explore your society portal:
+{login_url}
+
+Key Management Capabilities Available in Your Portal:
+1. Bylaws & AI Rulebook: Upload society guidelines so the AI assistant can answer resident queries 24/7.
+2. Resident Onboarding: Review and approve new resident registrations for your society.
+3. Announcements & Circulars: Broadcast notices with automatic multi-lingual translation.
+4. Maintenance & Vendors: Assign tasks, monitor workloads, and distribute tickets to specialists.
+5. Society Dues & Amenities: Publish maintenance records and configure amenity booking rules.
+
+If you have any questions or require assistance setting up your society, please reply directly to this email.
+
+Welcome aboard!
+The GrievDesk Platform Team
+"""
+
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #1E293B; background: #F1F5F9; margin: 0; padding: 24px; }}
+    .card {{ background: #FFFFFF; max-width: 600px; margin: 0 auto; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #E2E8F0; }}
+    .header {{ background: #0F52BA; color: #FFFFFF; padding: 28px 32px; text-align: center; }}
+    .header h1 {{ margin: 0; font-size: 22px; font-weight: 700; }}
+    .header p {{ margin: 6px 0 0 0; font-size: 14px; opacity: 0.9; }}
+    .body {{ padding: 32px; }}
+    .welcome-pill {{ display: inline-block; background: #ECFDF5; color: #065F46; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 9999px; border: 1px solid #A7F3D0; margin-bottom: 16px; }}
+    .action-btn {{ display: inline-block; background: #0F52BA; color: #FFFFFF !important; text-decoration: none; font-weight: 700; font-size: 15px; padding: 14px 28px; border-radius: 8px; margin: 24px 0; }}
+    .feature-list {{ background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 20px 24px; margin: 20px 0; font-size: 13px; }}
+    .feature-list li {{ margin-bottom: 10px; color: #334155; }}
+    .feature-list li strong {{ color: #0F172A; }}
+    .footer {{ background: #F8FAFC; border-top: 1px solid #E2E8F0; padding: 16px 32px; font-size: 12px; color: #64748B; text-align: center; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>&#x1F3E2; GrievDesk Society Management</h1>
+      <p>Residential Society Redressal &amp; Governance Portal</p>
+    </div>
+    <div class="body">
+      <div class="welcome-pill">&#x2728; Account Verified &amp; Active</div>
+      <h2 style="margin: 0 0 12px 0; color: #0F172A; font-size: 18px;">Welcome, {secretary_name}!</h2>
+      <p style="font-size: 14px; color: #475569; margin: 0 0 16px 0;">
+        We are thrilled to welcome <strong>{society_name}</strong> to the GrievDesk community! Your Secretary registration has been verified and your account is now ready for full access.
+      </p>
+
+      <div style="text-align: center;">
+        <a href="{login_url}" class="action-btn">Sign In to Society Dashboard &rarr;</a>
+      </div>
+
+      <div class="feature-list">
+        <div style="font-weight: 700; color: #0F172A; margin-bottom: 12px; font-size: 14px;">&#x1F680; Next Steps for Your Society:</div>
+        <ul style="padding-left: 20px; margin: 0;">
+          <li><strong>Upload Society Bylaws:</strong> Index rules so the resident AI assistant answers community questions 24/7.</li>
+          <li><strong>Approve Residents:</strong> Residents who register their flats can be approved directly from your Pending Approvals queue.</li>
+          <li><strong>Broadcast Notices:</strong> Post announcements with automatic localization into English, Hindi, and Odia.</li>
+          <li><strong>Vendor Dispatch:</strong> Coordinate single and mass maintenance assignments with local society specialists.</li>
+        </ul>
+      </div>
+
+      <p style="font-size: 13px; color: #64748B;">
+        Your sign-in email is <strong>{secretary_email}</strong>. If you need any assistance getting started, please reply directly to this email.
+      </p>
+    </div>
+    <div class="footer">
+      Sent with care by the GrievDesk Team &bull; Powered by Resend
+    </div>
+  </div>
+</body>
+</html>"""
+
+    print(f"\n=======================================================")
+    print(f"[SECRETARY ACTIVATION ACKNOWLEDGEMENT] Sent to {secretary_email} via Resend:")
+    print(f"Society: {society_name} | Secretary: {secretary_name}")
+    print(f"=======================================================\n")
+
+    return _dispatch_email(secretary_email, subject, plain_text, html_content)
+
+
+
 
 

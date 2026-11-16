@@ -19,12 +19,15 @@ def _get_or_none(complaint_id):
     return db.session.get(Complaint, complaint_id)
 
 
-def _report_counts() -> dict:
+def _report_counts(society_id=None) -> dict:
     """{original_complaint_id: number_of_duplicates_linked_to_it}"""
-    rows = (
+    q = (
         db.session.query(Complaint.duplicate_of, func.count(Complaint.id))
-        .filter(Complaint.duplicate_of.isnot(None)).group_by(Complaint.duplicate_of).all()
+        .filter(Complaint.duplicate_of.isnot(None))
     )
+    if society_id is not None:
+        q = q.filter(Complaint.society_id == society_id)
+    rows = q.group_by(Complaint.duplicate_of).all()
     return dict(rows)
 
 
@@ -39,7 +42,7 @@ def _with_reports(complaint, viewer, counts):
 @login_required
 def list_complaints():
     """
-    Public Inbox — visible to every logged-in user (resident, committee, secretary).
+    Public Inbox — visible to every logged-in user in their society.
     Filters: ?status= ?category= ?severity= ?block=   Paging: ?limit= (default 20, max 100) ?offset=
     Texts are translated into the reader's preferred language (see the *_local fields).
     """
@@ -48,7 +51,12 @@ def list_complaints():
     if bad:
         return jsonify(bad[0]), bad[1]
 
-    query = Complaint.query
+    # Strictly isolated to the viewer's society ecosystem
+    query = Complaint.query.filter(Complaint.society_id == viewer.society_id)
+    exclude_deleted = request.args.get("exclude_deleted", "").lower() in ("true", "1", "yes")
+    if exclude_deleted:
+        query = query.filter(Complaint.is_deleted.is_(False))
+
     status, category, severity = request.args.get("status"), request.args.get("category"), request.args.get("severity")
     if status:
         if status not in ComplaintStatus.ALL:
@@ -72,7 +80,7 @@ def list_complaints():
 
     total = query.count()
     complaints = query.order_by(Complaint.created_at.desc(), Complaint.id.desc()).limit(limit).offset(offset).all()
-    counts = _report_counts()
+    counts = _report_counts(society_id=viewer.society_id)
     rows = [_with_reports(c, viewer, counts) for c in complaints]
     meta = localize_groups(viewer, (rows, ["translated_text", "resolution_notes"]))
     return jsonify({"complaints": rows, "total": total, "limit": limit, "offset": offset, **meta}), 200
@@ -232,3 +240,56 @@ def get_complaint_audio(complaint_id):
     if path is None:
         return jsonify({"error": "audio_not_found"}), 404
     return send_file(path, mimetype=speech.AUDIO_TYPES.get("." + path.rsplit(".", 1)[-1], "application/octet-stream"))
+
+
+@complaints_bp.delete("/<int:complaint_id>")
+@login_required
+def delete_complaint(complaint_id):
+    """
+    Delete a complaint:
+    Allowed for:
+    1. The author who created it (resident, committee, secretary)
+    2. Committee / Secretary
+    Behavior:
+    - Marks complaint as is_deleted = True, records deleted_at and deleted_by.
+    - Public feed displays "Message deleted".
+    - Removed from My Tickets.
+    - Completely removed from vendor allocation section (removes any associated VendorTask records).
+    """
+    complaint = _get_or_none(complaint_id)
+    if complaint is None:
+        return jsonify({"error": "complaint_not_found"}), 404
+
+    actor = current_user()
+    is_author = complaint.user_id == actor.id
+    is_staff = actor.role in (Role.COMMITTEE, Role.SECRETARY)
+
+    if not (is_author or is_staff):
+        return jsonify({"error": "forbidden", "message": "You can only delete your own complaints."}), 403
+
+    from datetime import datetime, timezone
+    from app.models.vendor import VendorTask
+
+    complaint.is_deleted = True
+    complaint.deleted_at = datetime.now(timezone.utc)
+    complaint.deleted_by = actor.id
+    complaint.status = "deleted"
+
+    # Completely remove from vendor allocation
+    VendorTask.query.filter_by(complaint_id=complaint.id).delete()
+
+    add_event(
+        ticket_type=TicketType.COMPLAINT,
+        ticket_id=complaint.id,
+        action=TicketAction.STATUS_CHANGED,
+        detail="deleted",
+        note=f"Complaint deleted by {'author' if is_author else 'staff'} ({actor.name})",
+        actor=actor
+    )
+
+    db.session.commit()
+    return jsonify({
+        "message": "Complaint deleted successfully.",
+        "id": complaint.id,
+        "is_deleted": True
+    }), 200

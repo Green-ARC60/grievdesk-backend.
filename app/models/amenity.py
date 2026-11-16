@@ -12,7 +12,8 @@ class Amenity(db.Model):
     __tablename__ = "amenities"
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False, unique=True)
+    society_id = db.Column(db.Integer, db.ForeignKey("societies.id"), nullable=False, default=1)
+    name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.String(300), nullable=True)
 
     def to_dict(self) -> dict:

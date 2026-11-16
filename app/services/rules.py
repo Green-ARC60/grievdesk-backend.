@@ -11,17 +11,20 @@ NOT_UNDERSTOOD_MESSAGE = (
 )
 
 
-def latest_rulebook():
-    return BylawsDocument.query.order_by(BylawsDocument.version.desc()).first()
+def latest_rulebook(society_id=None):
+    q = BylawsDocument.query
+    if society_id is not None:
+        q = q.filter_by(society_id=society_id)
+    return q.order_by(BylawsDocument.version.desc()).first()
 
 
-def ask_rulebook(question: str) -> dict:
+def ask_rulebook(question: str, society_id=None) -> dict:
     """
     Shared by the chat flow and POST /api/rules/ask.
     Returns {"status": "answered"|"no_rulebook"|"not_understood", "reply": str}.
     Raises GeminiNotConfigured / GeminiCallFailed (callers turn those into 503 / 502).
     """
-    doc = latest_rulebook()
+    doc = latest_rulebook(society_id=society_id)
     if doc is None:
         return {"status": "no_rulebook", "reply": NO_RULEBOOK_MESSAGE}
 

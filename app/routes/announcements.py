@@ -24,13 +24,14 @@ def list_announcements():
     if bad:
         return jsonify(bad[0]), bad[1]
 
+    user = current_user()
     order = (Announcement.created_at.desc(), Announcement.id.desc())
-    pinned = [a.to_public_dict() for a in Announcement.query.filter_by(is_pinned=True).order_by(*order).all()]
-    general_query = Announcement.query.filter_by(is_pinned=False)
+    pinned = [a.to_public_dict() for a in Announcement.query.filter_by(society_id=user.society_id, is_pinned=True).order_by(*order).all()]
+    general_query = Announcement.query.filter_by(society_id=user.society_id, is_pinned=False)
     general_total = general_query.count()
     general = [a.to_public_dict() for a in general_query.order_by(*order).limit(limit).offset(offset).all()]
 
-    meta = localize_groups(current_user(), (pinned, ["title", "message"]), (general, ["title", "message"]))
+    meta = localize_groups(user, (pinned, ["title", "message"]), (general, ["title", "message"]))
     return jsonify({"pinned": pinned, "general": general, "general_total": general_total,
                     "limit": limit, "offset": offset, **meta}), 200
 

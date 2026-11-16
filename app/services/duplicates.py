@@ -21,6 +21,7 @@ def find_duplicate_root(reporter, category, now=None):
     return (
         Complaint.query.join(User, Complaint.user_id == User.id)
         .filter(
+            Complaint.society_id == reporter.society_id,
             Complaint.duplicate_of.is_(None),
             Complaint.status != ComplaintStatus.RESOLVED,
             Complaint.category == category,

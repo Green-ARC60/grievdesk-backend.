@@ -29,6 +29,7 @@ class ServiceRequest(db.Model):
     __tablename__ = "service_requests"
 
     id = db.Column(db.Integer, primary_key=True)
+    society_id = db.Column(db.Integer, db.ForeignKey("societies.id"), nullable=False, default=1)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
 
     service_type = db.Column(db.String(30), nullable=False)
@@ -36,6 +37,8 @@ class ServiceRequest(db.Model):
     translated_text = db.Column(db.Text, nullable=False)  # canonical English description
     preferred_time = db.Column(db.DateTime(timezone=True), nullable=True)
     status = db.Column(db.String(20), nullable=False, default=ServiceRequestStatus.NEW)
+    is_deleted = db.Column(db.Boolean, nullable=False, default=False)
+    deleted_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
@@ -48,7 +51,8 @@ class ServiceRequest(db.Model):
             "flat_no": self.user.flat_no if self.user else None,
             "block_no": self.user.block_no if self.user else None,
             "service_type": self.service_type,
-            "description": self.translated_text,
-            "status": self.status,
+            "description": "Request deleted" if self.is_deleted else self.translated_text,
+            "status": "deleted" if self.is_deleted else self.status,
+            "is_deleted": self.is_deleted,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

@@ -65,6 +65,7 @@ def _handle_complaint(user, text, data):
     original = find_duplicate_root(user, result["category"])
     complaint = Complaint(
         user_id=user.id,
+        society_id=user.society_id,
         raw_text=text,                                   # what the resident said/typed (voice: its English transcript)
         translated_text=result["english_text"],          # canonical English record
         # A voice note arrives already translated by the speech step, so the spoken language is unknown.
@@ -104,6 +105,7 @@ def _handle_service(user, text, data):
 
     request_row = ServiceRequest(
         user_id=user.id,
+        society_id=user.society_id,
         service_type=result["service_type"],
         raw_text=text,
         translated_text=result["description"],
@@ -116,7 +118,7 @@ def _handle_service(user, text, data):
 
 
 def _handle_rules(user, text, data):
-    outcome = ask_rulebook(text)
+    outcome = ask_rulebook(text, society_id=user.society_id)
     return _result(outcome["reply"], 200, understood=outcome["status"] == "answered", rules_status=outcome["status"])
 
 
@@ -147,7 +149,7 @@ def _announcement(user, text, data):
 
     pinned = _as_bool(data.get("pin"))
     announcement = Announcement(
-        title=drafted["title"], message=drafted["message"], is_pinned=pinned, posted_by=user.id,
+        title=drafted["title"], message=drafted["message"], is_pinned=pinned, posted_by=user.id, society_id=user.society_id,
     )
     db.session.add(announcement)
     db.session.flush()
@@ -167,7 +169,7 @@ def _dues_reminder(user, text, data):
         raise ChatInputError({"error": "missing_fields", "fields": ["flat_no", "block_no"]}, 400)
 
     residents = User.query.filter_by(
-        flat_no=flat_no, block_no=block_no, approval_status=ApprovalStatus.APPROVED,
+        flat_no=flat_no, block_no=block_no, society_id=user.society_id, approval_status=ApprovalStatus.APPROVED,
     ).all()
     if not residents:
         raise ChatInputError({"error": "flat_not_found", "message": f"No approved resident found for flat {flat_no}, block {block_no}."}, 404)

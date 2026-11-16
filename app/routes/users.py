@@ -16,8 +16,8 @@ users_bp = Blueprint("users", __name__, url_prefix="/api/users")
 
 PHONE_RE = re.compile(r"^\+?[0-9][0-9 \-]{5,18}[0-9]$")
 LANG_RE = re.compile(r"^[a-z]{2,3}$")
-EDITABLE = {"name", "phone", "preferred_language", "share_phone", "flat_no", "block_no",
-            "current_password", "new_password", "confirm_reapproval"}
+EDITABLE = {"name", "phone", "alt_phone", "preferred_language", "share_phone", "flat_no", "block_no",
+            "current_password", "new_password", "confirm_reapproval", "society_name", "secretary_name"}
 LOCKED = {"gmail", "role", "approval_status", "id", "password_hash"}
 
 
@@ -71,6 +71,17 @@ def update_me():
         if not isinstance(v, str) or not PHONE_RE.match(v.strip()):
             return _bad("phone", "Enter a valid phone number (digits, optional leading +).")
         changes["phone"] = v.strip()
+    if "alt_phone" in data:
+        v = data["alt_phone"]
+        if v is None or (isinstance(v, str) and not v.strip()):
+            changes["alt_phone"] = None
+        elif isinstance(v, str):
+            v_clean = v.strip()
+            if not PHONE_RE.match(v_clean):
+                return _bad("alt_phone", "Enter a valid alternate phone number (digits, optional leading +).")
+            changes["alt_phone"] = v_clean
+        else:
+            return _bad("alt_phone", "Alternate phone number must be a valid string or empty.")
     if "preferred_language" in data:
         v = data["preferred_language"]
         if not isinstance(v, str) or not LANG_RE.match(v.strip().lower()):
@@ -107,6 +118,30 @@ def update_me():
             return _bad("new_password", "The new password must be different from the current one.")
         user.set_password(new)
 
+    # Society details update (Secretary only)
+    if "society_name" in data or "secretary_name" in data:
+        if user.role != Role.SECRETARY:
+            return jsonify({
+                "error": "forbidden",
+                "message": "Only the Society Secretary can update the society name and secretary name."
+            }), 403
+
+        from app.models.society_settings import SocietySettings
+        settings = SocietySettings.get_settings()
+        if "society_name" in data:
+            s_name = data["society_name"]
+            if not isinstance(s_name, str) or not (1 <= len(s_name.strip()) <= 255):
+                return _bad("society_name", "Society name must be 1-255 characters.")
+            settings.society_name = s_name.strip()
+            settings.updated_by = user.id
+
+        if "secretary_name" in data:
+            sec_name = data["secretary_name"]
+            if not isinstance(sec_name, str) or not (1 <= len(sec_name.strip()) <= 255):
+                return _bad("secretary_name", "Secretary name must be 1-255 characters.")
+            settings.secretary_name = sec_name.strip()
+            settings.updated_by = user.id
+
     for field, value in changes.items():
         setattr(user, field, value)
     if reapproval:
@@ -119,12 +154,46 @@ def update_me():
     return jsonify({"message": message, "user": user.to_profile_dict()}), 200
 
 
+@users_bp.get("/society")
+@login_required
+def get_society_info():
+    """Returns official society details (name, secretary name) for the user's society."""
+    viewer = current_user()
+    soc = viewer.society
+    return jsonify({"society": soc.to_dict() if soc else {"society_name": "GrievDesk Residency", "secretary_name": "Pending Secretary"}}), 200
+
+
+@users_bp.put("/society")
+@secretary_required
+def update_society_info():
+    """Secretary only: update official society name and secretary name for this society."""
+    viewer = current_user()
+    soc = viewer.society
+    data = request.get_json(silent=True) or {}
+    if not soc:
+        return jsonify({"error": "society_not_found"}), 404
+
+    if "society_name" in data:
+        s_name = data["society_name"]
+        if not isinstance(s_name, str) or not (1 <= len(s_name.strip()) <= 255):
+            return _bad("society_name", "Society name must be 1-255 characters.")
+        soc.name = s_name.strip()
+    if "secretary_name" in data:
+        sec_name = data["secretary_name"]
+        if not isinstance(sec_name, str) or not (1 <= len(sec_name.strip()) <= 255):
+            return _bad("secretary_name", "Secretary name must be 1-255 characters.")
+        soc.secretary_name = sec_name.strip()
+    db.session.commit()
+    return jsonify({"message": "Society details updated.", "society": soc.to_dict()}), 200
+
+
 @users_bp.get("")
 @login_required
 def list_users():
     """
     Resident Directory.  ?status=approved (default) works for everyone.
     ?status=pending is the Secretary's approval queue — nobody else may see who is waiting.
+    Strictly isolated to viewer's society.
     """
     viewer = current_user()
     status = request.args.get("status", ApprovalStatus.APPROVED)
@@ -134,7 +203,7 @@ def list_users():
         return jsonify({"error": "forbidden", "message": "Only the Secretary can see pending registrations."}), 403
 
     rows = (
-        User.query.filter_by(approval_status=status)
+        User.query.filter_by(approval_status=status, society_id=viewer.society_id)
         .order_by(User.block_no.asc(), User.flat_no.asc(), User.name.asc()).all()
     )
     return jsonify({"users": [u.to_directory_dict(viewer) for u in rows]}), 200
@@ -237,6 +306,11 @@ def transfer_secretary(user_id):
         actor.role = Role.COMMITTEE
         db.session.flush()
         target.role = Role.SECRETARY
+        from app.models.society_settings import SocietySettings
+        settings = SocietySettings.get_settings()
+        if settings:
+            settings.secretary_name = target.name
+            settings.updated_by = target.id
         notify(target.id, NotificationType.ROLE_CHANGE,
                f"{actor.name} has transferred the Secretary role to you. You are now the Secretary.", actor)
         notify(actor.id, NotificationType.ROLE_CHANGE,

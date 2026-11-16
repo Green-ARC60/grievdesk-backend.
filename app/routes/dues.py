@@ -38,7 +38,8 @@ def my_dues():
 @committee_or_secretary_required
 def list_dues():
     """Everyone's dues. Filters: ?status=paid|unpaid  ?month=YYYY-MM  ?flat_no=  ?block_no="""
-    query = Due.query.join(User, Due.user_id == User.id)
+    actor = current_user()
+    query = Due.query.filter(Due.society_id == actor.society_id).join(User, Due.user_id == User.id)
 
     status = request.args.get("status")
     if status:
@@ -65,6 +66,7 @@ def create_due():
     """
     Creates one due row. Identify the resident by user_id, or by flat_no + block_no.
     """
+    actor = current_user()
     data = request.get_json(silent=True) or {}
 
     month = data.get("month")
@@ -85,7 +87,7 @@ def create_due():
 
     if data.get("user_id") is not None:
         resident = db.session.get(User, data["user_id"]) if isinstance(data["user_id"], int) and not isinstance(data["user_id"], bool) else None
-        residents = [resident] if resident else []
+        residents = [resident] if (resident and resident.society_id == actor.society_id) else []
     else:
         flat_no, block_no = data.get("flat_no"), data.get("block_no")
         if not flat_no or not block_no:
@@ -96,6 +98,7 @@ def create_due():
         clean_block = re.sub(r"^block\s+", "", block_str, flags=re.IGNORECASE).strip()
 
         residents = User.query.filter(
+            User.society_id == actor.society_id,
             db.func.lower(User.flat_no) == flat_str.lower(),
             db.func.lower(User.block_no) == clean_block.lower(),
             User.approval_status == ApprovalStatus.APPROVED,
@@ -103,6 +106,7 @@ def create_due():
 
         if not residents and clean_block != block_str:
             residents = User.query.filter(
+                User.society_id == actor.society_id,
                 db.func.lower(User.flat_no) == flat_str.lower(),
                 db.func.lower(User.block_no) == block_str.lower(),
                 User.approval_status == ApprovalStatus.APPROVED,
@@ -121,7 +125,7 @@ def create_due():
         }), 400
     resident = residents[0]
 
-    if Due.query.filter_by(user_id=resident.id, month=month).first():
+    if Due.query.filter_by(user_id=resident.id, month=month, society_id=actor.society_id).first():
         return jsonify({"error": "due_already_exists", "message": f"A due for {month} already exists for this resident."}), 409
 
     notes = (data.get("notes") or "").strip() or None
@@ -129,6 +133,7 @@ def create_due():
     send_email = bool(data.get("send_email", False))
 
     due = Due(
+        society_id=actor.society_id,
         user_id=resident.id,
         month=month,
         amount=amount,
@@ -169,8 +174,9 @@ def update_due(due_id):
     Edit a due record (amount, due date, notes, custom recipient email, status).
     Optional: pass "send_email": true to immediately re-dispatch the updated invoice.
     """
+    actor = current_user()
     due = db.session.get(Due, due_id)
-    if due is None:
+    if due is None or due.society_id != actor.society_id:
         return jsonify({"error": "due_not_found"}), 404
 
     data = request.get_json(silent=True) or {}
@@ -242,8 +248,9 @@ def send_due_email(due_id):
     Dispatches the maintenance due invoice directly to the resident's Gmail via Resend/SMTP.
     Carries the attached note and billing breakdown.
     """
+    actor = current_user()
     due = db.session.get(Due, due_id)
-    if due is None:
+    if due is None or due.society_id != actor.society_id:
         return jsonify({"error": "due_not_found"}), 404
 
     data = request.get_json(silent=True) or {}
@@ -292,8 +299,9 @@ def send_due_email(due_id):
 @committee_or_secretary_required
 def mark_paid(due_id):
     """Record a payment (default) or undo it with {"paid": false}. The resident gets a private receipt."""
+    actor = current_user()
     due = db.session.get(Due, due_id)
-    if due is None:
+    if due is None or due.society_id != actor.society_id:
         return jsonify({"error": "due_not_found"}), 404
 
     data = request.get_json(silent=True) or {}
@@ -323,8 +331,9 @@ def mark_paid(due_id):
 @committee_or_secretary_required
 def remind(due_id):
     """AI-drafted reminder to the person who owes this due (covers all their unpaid months). Private to them."""
+    actor = current_user()
     due = db.session.get(Due, due_id)
-    if due is None:
+    if due is None or due.society_id != actor.society_id:
         return jsonify({"error": "due_not_found"}), 404
     if due.paid_status == PaidStatus.PAID:
         return jsonify({"error": "already_paid", "message": "This due is already paid — nothing to remind about."}), 409

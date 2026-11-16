@@ -6,6 +6,7 @@ class Announcement(db.Model):
     __tablename__ = "announcements"
 
     id = db.Column(db.Integer, primary_key=True)
+    society_id = db.Column(db.Integer, db.ForeignKey("societies.id"), nullable=False, default=1)
     title = db.Column(db.String(200), nullable=False)
     message = db.Column(db.Text, nullable=False)  # canonical English
     is_pinned = db.Column(db.Boolean, nullable=False, default=False)

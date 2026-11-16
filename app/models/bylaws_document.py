@@ -11,6 +11,7 @@ class BylawsDocument(db.Model):
     __tablename__ = "bylaws_document"
 
     id = db.Column(db.Integer, primary_key=True)
+    society_id = db.Column(db.Integer, db.ForeignKey("societies.id"), nullable=False, default=1)
     content_text = db.Column(db.Text, nullable=False)
     version = db.Column(db.Integer, nullable=False, unique=True)
     uploaded_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)

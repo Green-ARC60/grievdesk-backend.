@@ -34,6 +34,7 @@ class Vendor(db.Model):
     __tablename__ = "vendors"
 
     id = db.Column(db.Integer, primary_key=True)
+    society_id = db.Column(db.Integer, db.ForeignKey("societies.id"), nullable=False, default=1)
     name = db.Column(db.String(120), nullable=False)
     profession = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(255), nullable=False)

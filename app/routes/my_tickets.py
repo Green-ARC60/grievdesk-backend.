@@ -18,8 +18,8 @@ def my_tickets():
     each with its status timeline. Other people's tickets live in the Public Inbox.
     """
     user = current_user()
-    complaints = Complaint.query.filter_by(user_id=user.id).order_by(Complaint.created_at.desc(), Complaint.id.desc()).all()
-    requests_ = ServiceRequest.query.filter_by(user_id=user.id).order_by(ServiceRequest.created_at.desc(), ServiceRequest.id.desc()).all()
+    complaints = Complaint.query.filter_by(user_id=user.id, is_deleted=False).order_by(Complaint.created_at.desc(), Complaint.id.desc()).all()
+    requests_ = ServiceRequest.query.filter_by(user_id=user.id, is_deleted=False).order_by(ServiceRequest.created_at.desc(), ServiceRequest.id.desc()).all()
 
     c_events = timelines_for(TicketType.COMPLAINT, [c.id for c in complaints])
     s_events = timelines_for(TicketType.SERVICE_REQUEST, [r.id for r in requests_])

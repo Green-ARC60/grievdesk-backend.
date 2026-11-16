@@ -13,3 +13,6 @@ from app.models.job_run import JobRun  # noqa: F401
 from app.models.translation_cache import TranslationCache  # noqa: F401
 from app.models.password_reset_otp import PasswordResetOTP  # noqa: F401
 from app.models.vendor import Vendor, VendorProfession, VendorTask  # noqa: F401
+from app.models.society_settings import SocietySettings  # noqa: F401
+from app.models.society import Society  # noqa: F401
+

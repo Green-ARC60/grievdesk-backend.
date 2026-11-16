@@ -22,6 +22,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     phone = db.Column(db.String(20), nullable=False)
+    alt_phone = db.Column(db.String(20), nullable=True)
     gmail = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
 
@@ -32,6 +33,7 @@ class User(db.Model):
     role = db.Column(db.String(20), nullable=False, default=Role.RESIDENT)
     approval_status = db.Column(db.String(20), nullable=False, default=ApprovalStatus.PENDING)
     share_phone = db.Column(db.Boolean, nullable=False, default=False)
+    society_id = db.Column(db.Integer, db.ForeignKey("societies.id"), nullable=False, default=1)
 
     created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
@@ -41,11 +43,10 @@ class User(db.Model):
     )
 
     __table_args__ = (
-        # Enforces "only one Secretary at a time" at the database level, not just in app logic.
-        # A partial unique index: the uniqueness only applies to rows where role = 'secretary'.
+        # Enforces only one Secretary per society
         db.Index(
-            "uq_single_secretary",
-            "role",
+            "uq_society_secretary",
+            "society_id",
             unique=True,
             postgresql_where=(role == Role.SECRETARY),
         ),
@@ -81,6 +82,8 @@ class User(db.Model):
             "block_no": self.block_no,
             "role": self.role,
             "phone": self.phone if (self.share_phone or staff_view) else None,
+            "alt_phone": self.alt_phone if (self.share_phone or staff_view) else None,
+            "alt_phones": [self.alt_phone] if (self.alt_phone and (self.share_phone or staff_view)) else [],
         }
         if staff_view or (viewer is not None and viewer.id == self.id):
             row["gmail"] = self.gmail
@@ -89,24 +92,35 @@ class User(db.Model):
         return row
 
     def to_profile_dict(self) -> dict:
-        """The logged-in user's OWN profile — includes their phone even if they chose not to share it."""
+        """The logged-in user's OWN profile — includes their phone even if they chose not to share it, plus society info."""
+        soc_name = self.society.name if self.society else "Greenwood Heights Society"
+        sec_name = self.society.secretary_name if self.society else "Ramesh Patel"
         return {
-            "id": self.id, "name": self.name, "phone": self.phone, "gmail": self.gmail,
-            "flat_no": self.flat_no, "block_no": self.block_no,
+            "id": self.id, "name": self.name, "phone": self.phone, "alt_phone": self.alt_phone,
+            "gmail": self.gmail, "flat_no": self.flat_no, "block_no": self.block_no,
             "preferred_language": self.preferred_language, "share_phone": self.share_phone,
             "role": self.role, "approval_status": self.approval_status,
+            "society_id": self.society_id,
+            "society_name": soc_name,
+            "secretary_name": sec_name,
         }
 
     def to_public_dict(self) -> dict:
         """Safe shape for API responses — never includes password_hash."""
+        soc_name = self.society.name if self.society else "Greenwood Heights Society"
+        sec_name = self.society.secretary_name if self.society else "Ramesh Patel"
         return {
             "id": self.id,
             "name": self.name,
             "phone": self.phone if self.share_phone else None,
+            "alt_phone": self.alt_phone if self.share_phone else None,
             "gmail": self.gmail,
             "flat_no": self.flat_no,
             "block_no": self.block_no,
             "preferred_language": self.preferred_language,
             "role": self.role,
             "approval_status": self.approval_status,
+            "society_id": self.society_id,
+            "society_name": soc_name,
+            "secretary_name": sec_name,
         }

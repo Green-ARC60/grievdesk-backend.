@@ -4,7 +4,7 @@ from flask_jwt_extended import get_jwt_identity
 from sqlalchemy import func
 
 from app.extensions import db
-from app.utils.decorators import login_required, committee_or_secretary_required
+from app.utils.decorators import login_required, committee_or_secretary_required, current_user
 from app.models.bylaws_document import BylawsDocument
 from app.services.gemini import GeminiNotConfigured, GeminiCallFailed
 from app.services.rules import ask_rulebook
@@ -58,9 +58,10 @@ def upload_rulebook():
     if len(text) > MAX_RULEBOOK_CHARS:
         return jsonify({"error": "rulebook_too_large", "max_characters": MAX_RULEBOOK_CHARS}), 413
 
-    version = (db.session.query(func.max(BylawsDocument.version)).scalar() or 0) + 1
+    user = current_user()
+    version = (db.session.query(func.max(BylawsDocument.version)).filter_by(society_id=user.society_id).scalar() or 0) + 1
     db.session.add(BylawsDocument(
-        content_text=text, version=version, uploaded_by=int(get_jwt_identity()),
+        content_text=text, version=version, uploaded_by=user.id, society_id=user.society_id,
     ))
     db.session.commit()
     return jsonify({"message": "Rulebook uploaded.", "version": version, "characters": len(text)}), 201
@@ -69,13 +70,14 @@ def upload_rulebook():
 @rules_bp.post("/ask")
 @login_required
 def ask():
-    """Direct rules Q&A without a chat transcript — same logic the chat flow uses."""
+    """Direct rules Q&A without a chat transcript — scoped to the user's society bylaws."""
     text = (request.get_json(silent=True) or {}).get("text")
     if not isinstance(text, str) or not text.strip():
         return jsonify({"error": "missing_text"}), 400
 
+    user = current_user()
     try:
-        outcome = ask_rulebook(text.strip())
+        outcome = ask_rulebook(text.strip(), society_id=user.society_id)
     except GeminiNotConfigured:
         return jsonify({"error": "ai_not_configured", "message": "GEMINI_API_KEY is missing from .env."}), 503
     except GeminiCallFailed as exc:
