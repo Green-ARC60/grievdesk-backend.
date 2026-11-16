@@ -58,7 +58,7 @@ def generate(contents, config=None) -> str:
                 log.append(f"{model}: {code} {getattr(exc, 'status', '') or ''}".strip())
                 if code in RETRY_SAME_MODEL:
                     if attempt < retries:
-                        time.sleep(1.5 * attempt)   # 1.5s, then 3s ...
+                        time.sleep(0.3 * attempt)   # 0.3s quick backoff
                         continue
                     break                            # retries used up -> next model
                 if code in NEXT_MODEL_ONLY:
@@ -67,7 +67,7 @@ def generate(contents, config=None) -> str:
             except Exception as exc:                 # timeouts, dropped connections: treat as temporary
                 log.append(f"{model}: {type(exc).__name__}")
                 if attempt < retries:
-                    time.sleep(1.5 * attempt)
+                    time.sleep(0.3 * attempt)
                     continue
                 break
             else:
