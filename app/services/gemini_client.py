@@ -44,7 +44,7 @@ def generate(contents, config=None) -> str:
         raise GeminiNotConfigured("GEMINI_API_KEY is not set in .env")
 
     retries = max(1, int(cfg.get("GEMINI_RETRIES_PER_MODEL", 2)))
-    timeout_ms = int(cfg.get("GEMINI_TIMEOUT_SECONDS", 30)) * 1000
+    timeout_ms = int(cfg.get("GEMINI_TIMEOUT_SECONDS", 10)) * 1000
     client = genai.Client(api_key=api_key, http_options=types.HttpOptions(timeout=timeout_ms))
 
     log = []

@@ -280,6 +280,7 @@ def send_message():
         return jsonify({"error": "ai_not_configured", "message": "GEMINI_API_KEY is missing from .env."}), 503
     except GeminiCallFailed as exc:
         db.session.rollback()
+        current_app.logger.error("GeminiCallFailed in chat route: %s", exc)
         return jsonify({
             "error": "ai_call_failed",
             "message": "The Gemini API call failed. Check your API key, the GEMINI_MODEL name, and your quota.",
