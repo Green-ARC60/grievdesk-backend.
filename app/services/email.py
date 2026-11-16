@@ -712,4 +712,161 @@ GrievDesk Society Management
     return _dispatch_email(vendor_email, subject, plain_text, html_content)
 
 
+def send_resident_complaint_assigned_email(
+    resident_email: str,
+    resident_name: str,
+    flat_no: str,
+    block_no: str,
+    complaint_id: int,
+    category: str,
+    description: str,
+    vendor_name: str,
+    vendor_profession: str,
+    vendor_phone: str = None,
+    vendor_address: str = None,
+    notes: str = None,
+    assigned_by_name: str = None,
+    assigned_by_role: str = None,
+) -> bool:
+    """
+    Sends a friendly, reassuring acknowledgement email to the resident who raised the complaint,
+    informing them that their ticket has been assigned to an authorized society specialist/vendor.
+    """
+    subject = f"GrievDesk: Your Complaint #{complaint_id} is Assigned to {vendor_name} ({vendor_profession})"
+
+    notes_display = notes.strip() if notes and notes.strip() else "Vendor instructed to inspect and attend to your apartment issue promptly."
+    phone_display = vendor_phone if vendor_phone else "Available via Society Security / Complex Office"
+    address_display = vendor_address if vendor_address else "Society Commercial Complex"
+    assigned_by_line = f"{assigned_by_name} ({assigned_by_role.capitalize()})" if assigned_by_name and assigned_by_role else "Society Management"
+
+    plain_text = f"""Hello {resident_name},
+
+Good news! Your society complaint #{complaint_id} regarding '{category}' has been reviewed and assigned to a specialist.
+
+STATUS: IN PROGRESS
+-------------------------------------------------------
+Ticket ID: #{complaint_id}
+Apartment: Flat {flat_no}, Block {block_no}
+Category: {category}
+Issue Description: {description}
+
+ASSIGNED SPECIALIST / HELPER:
+-------------------------------------------------------
+Specialist: {vendor_name} ({vendor_profession})
+Contact Phone: {phone_display}
+Shop / Complex Location: {address_display}
+Assigned By: {assigned_by_line}
+
+SPECIAL INSTRUCTIONS / NOTE:
+-------------------------------------------------------
+{notes_display}
+
+WHAT HAPPENS NEXT:
+1. The specialist has received the work order along with your flat details and will coordinate with you or visit your flat shortly.
+2. Once the technician completes the repair, please log in to GrievDesk (Public Inbox or My Tickets) to mark your complaint as 'Resolved'.
+
+Regards,
+GrievDesk Society Management
+"""
+
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #EEF0F3; margin: 0; padding: 24px; color: #1F262E; }}
+    .card {{ max-width: 540px; margin: 0 auto; background: #FFFFFF; border-radius: 12px; border: 1px solid #CBD5E1; padding: 32px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }}
+    .header {{ font-size: 20px; font-weight: 700; color: #0F52BA; margin-bottom: 4px; }}
+    .society {{ font-size: 13px; color: #64748B; margin-bottom: 20px; border-bottom: 1px solid #E2E8F0; padding-bottom: 12px; }}
+    .status-banner {{ background: linear-gradient(135deg, #EFF6FF, #DBEAFE); border: 1px solid #BFDBFE; border-radius: 8px; padding: 14px 18px; margin: 18px 0; display: flex; justify-content: space-between; align-items: center; }}
+    .status-title {{ font-size: 15px; font-weight: 700; color: #1E40AF; margin: 0; }}
+    .status-sub {{ font-size: 12px; color: #3B82F6; margin-top: 2px; }}
+    .status-pill {{ background-color: #2563EB; color: #FFFFFF; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 5px 12px; border-radius: 999px; }}
+    .info-table {{ width: 100%; border-collapse: collapse; margin: 18px 0; font-size: 13px; }}
+    .info-table td {{ padding: 8px 10px; border-bottom: 1px solid #F1F5F9; }}
+    .info-table td.label {{ color: #64748B; font-weight: 600; width: 38%; }}
+    .info-table td.value {{ color: #0F172A; font-weight: 500; }}
+    .notes-box {{ background-color: #FEF3C7; border-left: 4px solid #F59E0B; border-radius: 6px; padding: 14px 16px; margin: 20px 0; font-size: 13px; }}
+    .notes-title {{ font-weight: 700; color: #92400E; margin-bottom: 6px; }}
+    .notes-content {{ color: #78350F; line-height: 1.5; white-space: pre-wrap; }}
+    .next-steps {{ background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px; margin: 20px 0; font-size: 12px; color: #334155; line-height: 1.6; }}
+    .next-steps strong {{ color: #0F172A; }}
+    .footer {{ font-size: 12px; color: #64748B; margin-top: 24px; border-top: 1px solid #E2E8F0; padding-top: 16px; line-height: 1.5; }}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">GrievDesk &bull; Task Assigned to Vendor</div>
+    <div class="society">Residential Grievance Redressal &amp; Maintenance Portal</div>
+
+    <p>Dear <strong>{resident_name}</strong>,</p>
+    <p>Your complaint has been reviewed by the society office and assigned to an authorized specialist.</p>
+
+    <div class="status-banner">
+      <div>
+        <div class="status-title">Assigned to {vendor_name}</div>
+        <div class="status-sub">{vendor_profession} &bull; Ticket #{complaint_id}</div>
+      </div>
+      <span class="status-pill">IN PROGRESS</span>
+    </div>
+
+    <table class="info-table">
+      <tr>
+        <td class="label">Complaint Ticket</td>
+        <td class="value"><strong>#{complaint_id}</strong> ({category})</td>
+      </tr>
+      <tr>
+        <td class="label">Your Location</td>
+        <td class="value">Flat {flat_no}, Block {block_no}</td>
+      </tr>
+      <tr>
+        <td class="label">Issue Summary</td>
+        <td class="value">{description}</td>
+      </tr>
+      <tr>
+        <td class="label">Assigned Specialist</td>
+        <td class="value"><strong>{vendor_name}</strong> ({vendor_profession})</td>
+      </tr>
+      <tr>
+        <td class="label">Specialist Phone</td>
+        <td class="value"><strong style="color: #0F52BA;">{phone_display}</strong></td>
+      </tr>
+      <tr>
+        <td class="label">Complex Address</td>
+        <td class="value">{address_display}</td>
+      </tr>
+      <tr>
+        <td class="label">Assigned By</td>
+        <td class="value">{assigned_by_line}</td>
+      </tr>
+    </table>
+
+    <div class="notes-box">
+      <div class="notes-title">&#x1F4DD; Instructions from Society Office:</div>
+      <div class="notes-content">{notes_display}</div>
+    </div>
+
+    <div class="next-steps">
+      <div style="font-weight: 700; margin-bottom: 6px; color: #0F172A;">&#x2139;&#xFE0F; What to Expect Next:</div>
+      <div>&bull; <strong>Technician Visit:</strong> The assigned specialist has received your flat details and will contact you or visit your apartment to inspect the problem.</div>
+      <div>&bull; <strong>Resident Verification:</strong> Once the repair is completed, open your GrievDesk portal (Public Inbox or My Tickets) and click <strong>Save Status &rarr; Resolved</strong> to close your ticket.</div>
+    </div>
+
+    <div class="footer">
+      This is an automated notification from your society management portal. You can check real-time updates and timeline history in your GrievDesk account anytime.
+    </div>
+  </div>
+</body>
+</html>"""
+
+    print(f"\n=======================================================")
+    print(f"[RESIDENT ASSIGN NOTIFICATION] Sent to {resident_name} ({resident_email}):")
+    print(f"Complaint #{complaint_id} assigned to {vendor_name} ({vendor_profession})")
+    print(f"Notes: {notes_display}")
+    print(f"=======================================================\n")
+
+    return _dispatch_email(resident_email, subject, plain_text, html_content)
+
+
+
 

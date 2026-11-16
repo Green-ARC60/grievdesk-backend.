@@ -8,7 +8,11 @@ from app.models.complaint import Complaint, ComplaintStatus
 from app.models.ticket_event import TicketType, TicketAction
 from app.services.complaint_status import set_complaint_status
 from app.services.tickets import add_event
-from app.services.email import send_vendor_task_assigned_email, send_mass_vendor_work_order_email
+from app.services.email import (
+    send_vendor_task_assigned_email,
+    send_mass_vendor_work_order_email,
+    send_resident_complaint_assigned_email,
+)
 
 vendors_bp = Blueprint("vendors", __name__, url_prefix="/api/vendors")
 
@@ -224,6 +228,28 @@ def assign_vendor_task(vendor_id):
             assigned_by_name=user.name,
             assigned_by_role=user.role,
         )
+
+        # 4. Dispatch clear, friendly task assignment acknowledgement email to the complainer resident
+        if complaint.user and complaint.user.gmail:
+            try:
+                send_resident_complaint_assigned_email(
+                    resident_email=complaint.user.gmail,
+                    resident_name=resident_name,
+                    flat_no=flat_no,
+                    block_no=block_no,
+                    complaint_id=complaint.id,
+                    category=complaint.category or "Maintenance",
+                    description=complaint.translated_text or complaint.raw_text or "No description",
+                    vendor_name=vendor.name,
+                    vendor_profession=vendor.profession,
+                    vendor_phone=vendor.phone,
+                    vendor_address=vendor.address,
+                    notes=notes,
+                    assigned_by_name=user.name,
+                    assigned_by_role=user.role,
+                )
+            except Exception as res_err:
+                print(f"[RESIDENT ASSIGN EMAIL ERROR] Failed to send email to resident {complaint.user.gmail}: {res_err}")
     except Exception as e:
         print(f"[VENDOR ASSIGN EMAIL ERROR] Failed to send email to vendor: {e}")
 
@@ -348,6 +374,28 @@ def mass_assign_vendor_tasks():
                 "description": complaint.translated_text or complaint.raw_text or "",
             })
             total_assigned_count += 1
+
+            # Dispatch clear task assignment acknowledgement email to each complainer resident in the batch
+            if complaint.user and complaint.user.gmail:
+                try:
+                    send_resident_complaint_assigned_email(
+                        resident_email=complaint.user.gmail,
+                        resident_name=res_name,
+                        flat_no=flat_no,
+                        block_no=block_no,
+                        complaint_id=complaint.id,
+                        category=complaint.category or "Maintenance",
+                        description=complaint.translated_text or complaint.raw_text or "",
+                        vendor_name=vendor.name,
+                        vendor_profession=vendor.profession,
+                        vendor_phone=vendor.phone,
+                        vendor_address=vendor.address,
+                        notes=v_notes,
+                        assigned_by_name=user.name,
+                        assigned_by_role=user.role,
+                    )
+                except Exception as res_ex:
+                    print(f"[RESIDENT MASS ASSIGN EMAIL ERROR] Failed to send email to resident {complaint.user.gmail}: {res_ex}")
 
         db.session.commit()
 
