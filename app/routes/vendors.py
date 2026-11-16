@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.utils.decorators import login_required, current_user
+from app.utils.decorators import login_required, committee_or_secretary_required, current_user
 from app.models.vendor import Vendor, VendorProfession, VendorTask
 from app.models.complaint import Complaint, ComplaintStatus
 from app.models.ticket_event import TicketType, TicketAction
@@ -68,11 +68,11 @@ def get_vendor(vendor_id):
 
 
 @vendors_bp.post("")
-@login_required
+@committee_or_secretary_required
 def create_vendor():
     """
     Add a new helper / vendor to the society roster.
-    Permitted to society members.
+    Permitted to committee and secretary only.
     """
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
@@ -179,6 +179,13 @@ def assign_vendor_task(vendor_id):
     if complaint.is_deleted:
         return jsonify({"error": "Cannot assign a deleted complaint."}), 400
 
+    # Residents can only assign / request service for their own complaints
+    if not user.is_staff() and complaint.user_id != user.id:
+        return jsonify({
+            "error": "forbidden",
+            "message": "Residents can only request assistance for their own flat complaints."
+        }), 403
+
     # 1. Create the VendorTask
     task = VendorTask(
         vendor_id=vendor.id,
@@ -267,7 +274,7 @@ def assign_vendor_task(vendor_id):
 
 
 @vendors_bp.post("/mass-assign")
-@login_required
+@committee_or_secretary_required
 def mass_assign_vendor_tasks():
     """
     Mass Vendor Allocation & Workload Distribution:

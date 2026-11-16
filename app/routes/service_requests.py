@@ -23,6 +23,54 @@ def list_service_requests():
     return jsonify({"service_requests": rows, **meta}), 200
 
 
+@service_requests_bp.post("")
+@login_required
+def create_service_request():
+    """
+    Directly create a household service request for a flat.
+    Permitted for all authenticated members.
+    """
+    user = current_user()
+    data = request.get_json(silent=True) or {}
+
+    service_type = (data.get("service_type") or "other").strip()[:30]
+    raw_text = (data.get("description") or data.get("raw_text") or "").strip()
+    preferred_slot = (data.get("preferred_slot") or data.get("preferred_time") or "").strip()
+
+    if not raw_text:
+        return jsonify({"error": "description is required"}), 400
+
+    full_description = raw_text
+    if preferred_slot:
+        full_description = f"{raw_text} (Preferred Slot: {preferred_slot})"
+
+    new_request = ServiceRequest(
+        user_id=user.id,
+        society_id=user.society_id,
+        service_type=service_type,
+        raw_text=full_description,
+        translated_text=full_description,
+        status=ServiceRequestStatus.NEW,
+    )
+    db.session.add(new_request)
+    db.session.commit()
+
+    add_event(
+        ticket_type=TicketType.SERVICE_REQUEST,
+        ticket_id=new_request.id,
+        action=TicketAction.CREATED,
+        detail=f"Service: {service_type}",
+        note=f"Booked by Flat {user.flat_no or '-'}, Block {user.block_no or '-'}",
+        actor=user,
+    )
+    db.session.commit()
+
+    return jsonify({
+        "message": "Service request created successfully.",
+        "service_request": new_request.to_public_dict(),
+    }), 201
+
+
 @service_requests_bp.get("/<int:request_id>")
 @login_required
 def get_service_request(request_id):
