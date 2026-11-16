@@ -94,27 +94,40 @@ def get_complaint(complaint_id):
 
 
 @complaints_bp.patch("/<int:complaint_id>/status")
-@committee_or_secretary_required
+@login_required
 def update_status(complaint_id):
-    """Committee/secretary: move a complaint along (new -> in_progress -> resolved, or escalated)."""
+    """
+    Update complaint status:
+    Allowed for:
+    1. Staff (Committee / Secretary)
+    2. Specific resident who raised the complaint (complaint owner)
+    """
     complaint = _get_or_none(complaint_id)
     if complaint is None:
         return jsonify({"error": "complaint_not_found"}), 404
+
+    actor = current_user()
+    is_staff = actor.role in (Role.COMMITTEE, Role.SECRETARY)
+    is_owner = complaint.user_id == actor.id
+    if not (is_staff or is_owner):
+        return jsonify({
+            "error": "forbidden",
+            "message": "Only the resident who raised this complaint or society staff can change its status."
+        }), 403
 
     data = request.get_json(silent=True) or {}
     new_status = data.get("status")
     if new_status not in ComplaintStatus.ALL:
         return jsonify({"error": "invalid_status", "allowed": list(ComplaintStatus.ALL)}), 400
 
-    notes = data.get("resolution_notes")
+    notes = data.get("resolution_notes") or data.get("notes")
     if notes is not None and not isinstance(notes, str):
         return jsonify({"error": "invalid_resolution_notes"}), 400
     notes = notes.strip() if notes else None
 
     if new_status == complaint.status and not notes:
-        return jsonify({"message": "Status unchanged.", "complaint": complaint.to_public_dict(current_user())}), 200
+        return jsonify({"message": "Status unchanged.", "complaint": complaint.to_public_dict(actor)}), 200
 
-    actor = current_user()
     changed = set_complaint_status(complaint, new_status, actor, resolution_notes=notes)
     db.session.commit()
     return jsonify({

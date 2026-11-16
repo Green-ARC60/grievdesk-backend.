@@ -85,4 +85,6 @@ class Complaint(db.Model):
             "resolution_notes": self.resolution_notes,
             "audio_available": bool(self.audio_url) and (is_staff or is_owner),
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "is_owner": is_owner,
+            "can_edit_status": is_staff or is_owner,
         }
