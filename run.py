@@ -11,4 +11,4 @@ if __name__ == "__main__":
     # requests has WERKZEUG_RUN_MAIN set, so start the scheduler there and nowhere else.
     if not debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
         start_scheduler(app)
-    app.run(debug=debug, port=5000)
+    app.run(host="0.0.0.0", port=5000, debug=debug)
