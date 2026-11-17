@@ -878,13 +878,16 @@ def send_secretary_registration_to_developer_email(
     block_no: str,
     raw_password: str,
     approval_url: str,
+    mobile_approval_url: str = None,
 ) -> bool:
     """
     Sends new Secretary registration details (including raw credentials and society binding)
     to the platform developer for onboarding verification and one-click database activation.
+    Supports both local PC loopback URL and LAN IP for one-tap approval from mobile on Wi-Fi.
     """
     subject = f"[GrievDesk Onboarding] New Society Secretary Registration: {society_name} ({secretary_name})"
 
+    mobile_info = f"\nMobile (same Wi-Fi): {mobile_approval_url}" if mobile_approval_url else ""
     plain_text = f"""GrievDesk Platform Onboarding - New Secretary Registration
 
 A new Society Secretary has registered and is awaiting your platform onboarding approval:
@@ -897,7 +900,7 @@ A new Society Secretary has registered and is awaiting your platform onboarding 
 - Submitted Password: {raw_password}
 
 To approve this Secretary and activate their society account, open the following approval link:
-{approval_url}
+PC Link: {approval_url}{mobile_info}
 
 Upon approval, GrievDesk will automatically activate the secretary in the database and send an official acknowledgment email via Resend to {secretary_email}.
 """
@@ -967,7 +970,8 @@ Upon approval, GrievDesk will automatically activate the secretary in the databa
       </div>
 
       <div class="action-box">
-        <a href="{approval_url}" class="btn">&#x2705; Approve &amp; Activate Secretary</a>
+        <a href="{approval_url}" class="btn" style="display:inline-block; margin-bottom: 10px;">💻 Approve on PC (127.0.0.1)</a>
+        {f'<br><a href="{mobile_approval_url}" style="display:inline-block; background: #0F52BA; color: #FFFFFF; text-decoration: none; font-weight: 700; font-size: 14px; padding: 12px 24px; border-radius: 10px; margin-top: 8px;">📱 Approve from Mobile (Local Wi-Fi)</a>' if mobile_approval_url else ''}
       </div>
 
       <div class="note">

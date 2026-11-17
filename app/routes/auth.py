@@ -154,6 +154,16 @@ def register():
         backend_url = current_app.config.get("BACKEND_URL", "http://127.0.0.1:5000")
         approval_url = f"{backend_url}/api/auth/developer/approve-secretary?email={new_user.gmail}&token={approval_token}"
 
+        # Build Mobile-friendly LAN URL (e.g. for approving from phone on the same Wi-Fi)
+        mobile_approval_url = None
+        try:
+            import socket
+            lan_ips = [ip for ip in socket.gethostbyname_ex(socket.gethostname())[2] if not ip.startswith("127.")]
+            if lan_ips:
+                mobile_approval_url = f"http://{lan_ips[0]}:5000/api/auth/developer/approve-secretary?email={new_user.gmail}&token={approval_token}"
+        except Exception:
+            pass
+
         # Forward full credentials & password to developer mail for verification
         send_secretary_registration_to_developer_email(
             developer_email=dev_email,
@@ -165,6 +175,7 @@ def register():
             block_no=new_user.block_no,
             raw_password=data["password"],
             approval_url=approval_url,
+            mobile_approval_url=mobile_approval_url,
         )
 
         message = (
