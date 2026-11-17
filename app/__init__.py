@@ -31,3 +31,8 @@ def create_app(config_class=Config):
         return {"status": "ok"}, 200
 
     return app
+
+
+# Default WSGI application instance (enables `gunicorn app:app` on Render / Heroku / AWS)
+app = create_app()
+

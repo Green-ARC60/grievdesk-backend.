@@ -1,9 +1,7 @@
 import os
 
-from app import create_app
+from app import app
 from app.scheduler import start_scheduler
-
-app = create_app()
 
 if __name__ == "__main__":
     debug = True
