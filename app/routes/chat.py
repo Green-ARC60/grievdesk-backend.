@@ -153,8 +153,9 @@ def _announcement(user, text, data):
     )
     db.session.add(announcement)
     db.session.flush()
-    # Broadcast notification (target_user_id NULL = every resident sees it).
+    # Broadcast notification (target_user_id NULL = every resident in this society sees it).
     db.session.add(Notification(
+        society_id=user.society_id,
         type=NotificationType.ANNOUNCEMENT, message=drafted["title"],
         target_user_id=None, created_by=user.id,
     ))

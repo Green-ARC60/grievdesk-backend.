@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 
 from app.extensions import db
 from app.utils.decorators import login_required, current_user
@@ -11,10 +11,19 @@ from app.utils.paging import parse_paging
 notifications_bp = Blueprint("notifications", __name__, url_prefix="/api/notifications")
 
 
-def _visible_to(user_id):
-    """Broadcasts (target NULL) plus anything addressed to me. Other residents' reminders never appear."""
+def _visible_to(user):
+    """
+    Broadcasts (target NULL) strictly for the user's society plus personal notifications addressed to me.
+    Other societies' circulars/announcements or residents' reminders never appear.
+    """
     return Notification.query.filter(
-        or_(Notification.target_user_id.is_(None), Notification.target_user_id == user_id)
+        or_(
+            Notification.target_user_id == user.id,
+            and_(
+                Notification.target_user_id.is_(None),
+                Notification.society_id == user.society_id,
+            ),
+        )
     )
 
 
@@ -31,7 +40,7 @@ def my_notifications():
     if bad:
         return jsonify(bad[0]), bad[1]
 
-    query = _visible_to(user.id)
+    query = _visible_to(user)
     total = query.count()
     rows = query.order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit).offset(offset).all()
     read = _read_ids(user.id)
@@ -47,7 +56,7 @@ def my_notifications():
 def mark_read(notification_id):
     user = current_user()
     # Someone else's private notification looks exactly like a missing one.
-    note = _visible_to(user.id).filter(Notification.id == notification_id).first()
+    note = _visible_to(user).filter(Notification.id == notification_id).first()
     if note is None:
         return jsonify({"error": "notification_not_found"}), 404
     if notification_id not in _read_ids(user.id):
@@ -61,7 +70,7 @@ def mark_read(notification_id):
 def mark_all_read():
     user = current_user()
     already = _read_ids(user.id)
-    fresh = [n.id for n in _visible_to(user.id).all() if n.id not in already]
+    fresh = [n.id for n in _visible_to(user).all() if n.id not in already]
     for nid in fresh:
         db.session.add(NotificationRead(user_id=user.id, notification_id=nid))
     db.session.commit()

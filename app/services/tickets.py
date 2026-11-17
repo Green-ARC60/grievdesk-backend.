@@ -2,6 +2,7 @@
 from app.extensions import db
 from app.models.notification import Notification, NotificationType
 from app.models.ticket_event import TicketEvent, TicketType
+from app.models.user import User
 
 STATUS_LABELS = {
     "new": "New",
@@ -28,7 +29,16 @@ def timeline(ticket_type, ticket_id):
 
 def notify(user_id, notification_type, message, created_by):
     """A private notification — only `user_id` will ever see it."""
+    soc_id = None
+    if user_id:
+        target = db.session.get(User, user_id)
+        if target:
+            soc_id = target.society_id
+    if not soc_id and created_by is not None:
+        soc_id = getattr(created_by, "society_id", None)
+
     db.session.add(Notification(
+        society_id=soc_id,
         type=notification_type, message=message, target_user_id=user_id,
         created_by=created_by.id if created_by is not None else None,   # None = the system
     ))

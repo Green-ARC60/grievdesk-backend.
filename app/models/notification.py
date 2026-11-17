@@ -13,10 +13,11 @@ class NotificationType:
 
 
 class Notification(db.Model):
-    """target_user_id NULL = broadcast to every resident; otherwise only that user sees it."""
+    """target_user_id NULL = broadcast to residents of society_id; otherwise only target_user_id sees it."""
     __tablename__ = "notifications"
 
     id = db.Column(db.Integer, primary_key=True)
+    society_id = db.Column(db.Integer, db.ForeignKey("societies.id"), nullable=True, index=True)
     type = db.Column(db.String(20), nullable=False)
     message = db.Column(db.Text, nullable=False)  # canonical English
     target_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
@@ -27,6 +28,7 @@ class Notification(db.Model):
     def to_dict(self, read: bool = False) -> dict:
         return {
             "id": self.id,
+            "society_id": self.society_id,
             "type": self.type,
             "message": self.message,
             "is_broadcast": self.target_user_id is None,
